@@ -90,6 +90,44 @@ func TestConvertTimeSeriesToTimeValuePoints_InvalidValue(t *testing.T) {
 	}
 }
 
+func TestConvertTimeSeriesToTimeValuePoints_NonFiniteValues(t *testing.T) {
+	ts := TimeSeries{
+		Values: []DataPoint{
+			{Timestamp: 1700000000, Value: "1.5"},
+			{Timestamp: 1700000300, Value: "+Inf"},
+			{Timestamp: 1700000600, Value: "-Inf"},
+			{Timestamp: 1700000900, Value: "NaN"},
+			{Timestamp: 1700001200, Value: "2.5"},
+		},
+	}
+
+	points := ConvertTimeSeriesToTimeValuePoints(ts)
+	if len(points) != 2 {
+		t.Fatalf("expected 2 points (non-finite skipped), got %d", len(points))
+	}
+	if points[0].Value != 1.5 {
+		t.Errorf("expected value 1.5, got %f", points[0].Value)
+	}
+	if points[1].Value != 2.5 {
+		t.Errorf("expected value 2.5, got %f", points[1].Value)
+	}
+}
+
+func TestConvertTimeSeriesToTimeValuePoints_AllNonFinite(t *testing.T) {
+	ts := TimeSeries{
+		Values: []DataPoint{
+			{Timestamp: 1700000000, Value: "+Inf"},
+			{Timestamp: 1700000300, Value: "-Inf"},
+			{Timestamp: 1700000600, Value: "NaN"},
+		},
+	}
+
+	points := ConvertTimeSeriesToTimeValuePoints(ts)
+	if len(points) != 0 {
+		t.Fatalf("expected 0 points, got %d", len(points))
+	}
+}
+
 func TestConvertToTimeSeriesResponse_Vector(t *testing.T) {
 	// Create a mock model.Vector
 	vector := model.Vector{

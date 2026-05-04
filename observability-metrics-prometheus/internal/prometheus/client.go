@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/prometheus/client_golang/api"
@@ -178,6 +179,8 @@ func convertToTimeSeriesResponse(result model.Value) *TimeSeriesResponse {
 
 // ConvertTimeSeriesToTimeValuePoints converts a TimeSeries to TimeValuePoint slice
 // with ISO 8601 formatted timestamps and float64 values.
+// Non-finite values (+Inf, -Inf, NaN) returned by Prometheus (e.g. from histogram_quantile
+// with insufficient data) are skipped — JSON cannot represent them.
 func ConvertTimeSeriesToTimeValuePoints(ts TimeSeries) []TimeValuePoint {
 	points := make([]TimeValuePoint, 0, len(ts.Values))
 
@@ -188,6 +191,10 @@ func ConvertTimeSeriesToTimeValuePoints(ts TimeSeries) []TimeValuePoint {
 
 		var value float64
 		_, _ = fmt.Sscanf(dp.Value, "%f", &value)
+
+		if math.IsInf(value, 0) || math.IsNaN(value) {
+			continue
+		}
 
 		points = append(points, TimeValuePoint{
 			Time:  t.Format(time.RFC3339Nano),

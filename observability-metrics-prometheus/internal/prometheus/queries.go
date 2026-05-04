@@ -180,20 +180,20 @@ func BuildMemoryLimitsQuery(labelFilter, sumByClause, groupLeftClause string) st
 func BuildHTTPRequestCountQuery(labelFilter, sumByClause, groupLeftClause string) string {
 	return fmt.Sprintf(`
 	    sum by (%s) (
-	        rate(hubble_http_requests_total{reporter="client"}[2m])
-	            * on(destination_pod, destination_namespace) %s
+	        rate(hubble_http_requests_total{reporter="server"}[2m])
+	            * on(destination_namespace, destination_workload) %s
 	            label_replace(
 	                label_replace(
 	                    kube_pod_labels{%s},
-	                    "destination_pod",
+	                    "destination_namespace",
 	                    "$1",
-	                    "pod",
+	                    "namespace",
 	                    "(.*)"
 	                ),
-	                "destination_namespace",
+	                "destination_workload",
 	                "$1",
-	                "namespace",
-	                "(.*)"
+	                "pod",
+	                "^(.*)-[^-]+-[^-]+$"
 	            )
 	    )
 	    >= 0
@@ -205,20 +205,20 @@ func BuildHTTPRequestCountQuery(labelFilter, sumByClause, groupLeftClause string
 func BuildSuccessfulHTTPRequestCountQuery(labelFilter, sumByClause, groupLeftClause string) string {
 	return fmt.Sprintf(`
 	    sum by (%s) (
-	        rate(hubble_http_requests_total{reporter="client", status=~"^[123]..?$"}[2m])
-	            * on(destination_pod, destination_namespace) %s
+	        rate(hubble_http_requests_total{reporter="server", status=~"^[123]..?$"}[2m])
+	            * on(destination_namespace, destination_workload) %s
 	            label_replace(
 	                label_replace(
 	                    kube_pod_labels{%s},
-	                    "destination_pod",
+	                    "destination_namespace",
 	                    "$1",
-	                    "pod",
+	                    "namespace",
 	                    "(.*)"
 	                ),
-	                "destination_namespace",
+	                "destination_workload",
 	                "$1",
-	                "namespace",
-	                "(.*)"
+	                "pod",
+	                "^(.*)-[^-]+-[^-]+$"
 	            )
 	    )
 	    >= 0
@@ -230,20 +230,20 @@ func BuildSuccessfulHTTPRequestCountQuery(labelFilter, sumByClause, groupLeftCla
 func BuildUnsuccessfulHTTPRequestCountQuery(labelFilter, sumByClause, groupLeftClause string) string {
 	return fmt.Sprintf(`
 	    sum by (%s) (
-	        rate(hubble_http_requests_total{reporter="client", status=~"^[45]..?$"}[2m])
-	            * on(destination_pod, destination_namespace) %s
+	        rate(hubble_http_requests_total{reporter="server", status=~"^[45]..?$"}[2m])
+	            * on(destination_namespace, destination_workload) %s
 	            label_replace(
 	                label_replace(
 	                    kube_pod_labels{%s},
-	                    "destination_pod",
+	                    "destination_namespace",
 	                    "$1",
-	                    "pod",
+	                    "namespace",
 	                    "(.*)"
 	                ),
-	                "destination_namespace",
+	                "destination_workload",
 	                "$1",
-	                "namespace",
-	                "(.*)"
+	                "pod",
+	                "^(.*)-[^-]+-[^-]+$"
 	            )
 	    )
 	    >= 0
@@ -255,38 +255,38 @@ func BuildMeanHTTPRequestLatencyQuery(labelFilter, sumByClause, groupLeftClause 
 	return fmt.Sprintf(`
 	    (
 	        sum by (%s) (
-	            rate(hubble_http_request_duration_seconds_sum{reporter="client"}[2m])
-	                * on(destination_pod, destination_namespace) %s
+	            rate(hubble_http_request_duration_seconds_sum{reporter="server"}[2m])
+	                * on(destination_namespace, destination_workload) %s
 	                label_replace(
 	                    label_replace(
 	                        kube_pod_labels{%s},
-	                        "destination_pod",
+	                        "destination_namespace",
 	                        "$1",
-	                        "pod",
+	                        "namespace",
 	                        "(.*)"
 	                    ),
-	                    "destination_namespace",
+	                    "destination_workload",
 	                    "$1",
-	                    "namespace",
-	                    "(.*)"
+	                    "pod",
+	                    "^(.*)-[^-]+-[^-]+$"
 	                )
 	        )
 	        /
 	        sum by (%s) (
-	            rate(hubble_http_requests_total{reporter="client"}[2m])
-	                * on(destination_pod, destination_namespace) %s
+	            rate(hubble_http_requests_total{reporter="server"}[2m])
+	                * on(destination_namespace, destination_workload) %s
 	                label_replace(
 	                    label_replace(
 	                        kube_pod_labels{%s},
-	                        "destination_pod",
+	                        "destination_namespace",
 	                        "$1",
-	                        "pod",
+	                        "namespace",
 	                        "(.*)"
 	                    ),
-	                    "destination_namespace",
+	                    "destination_workload",
 	                    "$1",
-	                    "namespace",
-	                    "(.*)"
+	                    "pod",
+	                    "^(.*)-[^-]+-[^-]+$"
 	                )
 	        )
 	    )
@@ -301,20 +301,20 @@ func Build50thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause, groupL
 	    histogram_quantile(
 	        0.5,
 	        sum by (%s) (
-	            rate(hubble_http_request_duration_seconds_bucket{reporter="client"}[2m])
-	                * on(destination_pod, destination_namespace) %s
+	            rate(hubble_http_request_duration_seconds_bucket{reporter="server"}[2m])
+	                * on(destination_namespace, destination_workload) %s
 	                label_replace(
 	                    label_replace(
 	                        kube_pod_labels{%s},
-	                        "destination_pod",
+	                        "destination_namespace",
 	                        "$1",
-	                        "pod",
+	                        "namespace",
 	                        "(.*)"
 	                    ),
-	                    "destination_namespace",
+	                    "destination_workload",
 	                    "$1",
-	                    "namespace",
-	                    "(.*)"
+	                    "pod",
+	                    "^(.*)-[^-]+-[^-]+$"
 	                )
 	        )
 	    )
@@ -329,20 +329,20 @@ func Build90thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause, groupL
 	    histogram_quantile(
 	        0.9,
 	        sum by (%s) (
-	            rate(hubble_http_request_duration_seconds_bucket{reporter="client"}[2m])
-	                * on(destination_pod, destination_namespace) %s
+	            rate(hubble_http_request_duration_seconds_bucket{reporter="server"}[2m])
+	                * on(destination_namespace, destination_workload) %s
 	                label_replace(
 	                    label_replace(
 	                        kube_pod_labels{%s},
-	                        "destination_pod",
+	                        "destination_namespace",
 	                        "$1",
-	                        "pod",
+	                        "namespace",
 	                        "(.*)"
 	                    ),
-	                    "destination_namespace",
+	                    "destination_workload",
 	                    "$1",
-	                    "namespace",
-	                    "(.*)"
+	                    "pod",
+	                    "^(.*)-[^-]+-[^-]+$"
 	                )
 	        )
 	    )
@@ -357,20 +357,20 @@ func Build99thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause, groupL
 	    histogram_quantile(
 	        0.99,
 	        sum by (%s) (
-	            rate(hubble_http_request_duration_seconds_bucket{reporter="client"}[2m])
-	                * on(destination_pod, destination_namespace) %s
+	            rate(hubble_http_request_duration_seconds_bucket{reporter="server"}[2m])
+	                * on(destination_namespace, destination_workload) %s
 	                label_replace(
 	                    label_replace(
 	                        kube_pod_labels{%s},
-	                        "destination_pod",
+	                        "destination_namespace",
 	                        "$1",
-	                        "pod",
+	                        "namespace",
 	                        "(.*)"
 	                    ),
-	                    "destination_namespace",
+	                    "destination_workload",
 	                    "$1",
-	                    "namespace",
-	                    "(.*)"
+	                    "pod",
+	                    "^(.*)-[^-]+-[^-]+$"
 	                )
 	        )
 	    )
