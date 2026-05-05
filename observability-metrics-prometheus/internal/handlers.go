@@ -116,6 +116,10 @@ func (h *MetricsHandler) QueryMetrics(ctx context.Context, request gen.QueryMetr
 	groupLeftClause := prometheus.BuildGroupLeftClause(scopeLabels)
 	sumByClause := prometheus.BuildSumByClause("", scopeLabels)
 
+	hubbleLabelFilter := prometheus.BuildHubbleLabelFilter(scope.Namespace, componentUID, projectUID, environmentUID)
+	hubbleScopeLabels := prometheus.BuildHubbleScopeLabelNames(componentUID, projectUID, environmentUID)
+	hubbleSumByClause := prometheus.BuildSumByClause("", hubbleScopeLabels)
+
 	startTime := request.Body.StartTime
 	endTime := request.Body.EndTime
 
@@ -123,7 +127,7 @@ func (h *MetricsHandler) QueryMetrics(ctx context.Context, request gen.QueryMetr
 	case gen.Resource:
 		return h.queryResourceMetrics(ctx, labelFilter, sumByClause, groupLeftClause, startTime, endTime, step)
 	case gen.Http:
-		return h.queryHTTPMetrics(ctx, labelFilter, sumByClause, groupLeftClause, startTime, endTime, step)
+		return h.queryHTTPMetrics(ctx, hubbleLabelFilter, hubbleSumByClause, startTime, endTime, step)
 	default:
 		return badRequestMetrics(fmt.Sprintf("unknown metric type: %s", request.Body.Metric)), nil
 	}
@@ -206,7 +210,7 @@ func (h *MetricsHandler) queryResourceMetrics(
 
 func (h *MetricsHandler) queryHTTPMetrics(
 	ctx context.Context,
-	labelFilter, sumByClause, groupLeftClause string,
+	labelFilter, sumByClause string,
 	startTime, endTime time.Time,
 	step time.Duration,
 ) (gen.QueryMetricsResponseObject, error) {
@@ -217,7 +221,7 @@ func (h *MetricsHandler) queryHTTPMetrics(
 
 	type querySpec struct {
 		name    string
-		queryFn func(string, string, string) string
+		queryFn func(string, string) string
 		assign  func(items *[]gen.MetricsTimeSeriesItem)
 	}
 
@@ -235,7 +239,7 @@ func (h *MetricsHandler) queryHTTPMetrics(
 		wg.Add(1)
 		go func(q querySpec) {
 			defer wg.Done()
-			query := q.queryFn(labelFilter, sumByClause, groupLeftClause)
+			query := q.queryFn(labelFilter, sumByClause)
 			h.logger.Debug("HTTP metric query", "name", q.name, "query", query)
 			resp, err := h.promClient.QueryRangeTimeSeries(ctx, query, startTime, endTime, step)
 			if err != nil {

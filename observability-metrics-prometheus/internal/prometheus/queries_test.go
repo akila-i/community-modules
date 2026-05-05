@@ -29,6 +29,27 @@ func TestPrometheusLabelName(t *testing.T) {
 	}
 }
 
+func TestHubbleLabelName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"openchoreo.dev/component-uid", "openchoreo_dev_component_uid"},
+		{"openchoreo.dev/project-uid", "openchoreo_dev_project_uid"},
+		{"openchoreo.dev/environment-uid", "openchoreo_dev_environment_uid"},
+		{"openchoreo.dev/namespace", "openchoreo_dev_namespace"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := hubbleLabelName(tt.input)
+			if got != tt.expected {
+				t.Errorf("hubbleLabelName(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestBuildLabelFilter(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -94,6 +115,60 @@ func TestBuildLabelFilter(t *testing.T) {
 	}
 }
 
+func TestBuildHubbleLabelFilter(t *testing.T) {
+	tests := []struct {
+		name           string
+		namespace      string
+		componentUID   string
+		projectUID     string
+		environmentUID string
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name:         "namespace only",
+			namespace:    "test-ns",
+			wantContains: []string{`openchoreo_dev_namespace="test-ns"`},
+			wantNotContain: []string{
+				"label_",
+				"openchoreo_dev_component_uid",
+				"openchoreo_dev_project_uid",
+				"openchoreo_dev_environment_uid",
+			},
+		},
+		{
+			name:           "all fields",
+			namespace:      "test-ns",
+			componentUID:   "c5f0a8d3-7e2b-4d9c-a1f4-6b8e3c0d5a7f",
+			projectUID:     "d6a1b9e4-8f3c-4e0d-b2a5-7c9f4d1e6b8a",
+			environmentUID: "e7b2c0f5-9a4d-4f1e-c3b6-8d0a5e2f7c9b",
+			wantContains: []string{
+				`openchoreo_dev_namespace="test-ns"`,
+				`openchoreo_dev_component_uid="c5f0a8d3-7e2b-4d9c-a1f4-6b8e3c0d5a7f"`,
+				`openchoreo_dev_project_uid="d6a1b9e4-8f3c-4e0d-b2a5-7c9f4d1e6b8a"`,
+				`openchoreo_dev_environment_uid="e7b2c0f5-9a4d-4f1e-c3b6-8d0a5e2f7c9b"`,
+			},
+			wantNotContain: []string{"label_"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildHubbleLabelFilter(tt.namespace, tt.componentUID, tt.projectUID, tt.environmentUID)
+			for _, want := range tt.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("BuildHubbleLabelFilter() = %q, want to contain %q", got, want)
+				}
+			}
+			for _, notWant := range tt.wantNotContain {
+				if strings.Contains(got, notWant) {
+					t.Errorf("BuildHubbleLabelFilter() = %q, should not contain %q", got, notWant)
+				}
+			}
+		})
+	}
+}
+
 func TestBuildScopeLabelNames(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -113,6 +188,52 @@ func TestBuildScopeLabelNames(t *testing.T) {
 			got := BuildScopeLabelNames(tt.componentUID, tt.projectUID, tt.environmentUID)
 			if len(got) != tt.wantLen {
 				t.Errorf("BuildScopeLabelNames() returned %d labels, want %d", len(got), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestBuildHubbleScopeLabelNames(t *testing.T) {
+	tests := []struct {
+		name           string
+		componentUID   string
+		projectUID     string
+		environmentUID string
+		wantLen        int
+		wantContains   []string
+	}{
+		{"none", "", "", "", 0, nil},
+		{"component only", "comp-1", "", "", 1, []string{"openchoreo_dev_component_uid"}},
+		{"all", "comp-1", "proj-1", "env-1", 3, []string{
+			"openchoreo_dev_component_uid",
+			"openchoreo_dev_project_uid",
+			"openchoreo_dev_environment_uid",
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildHubbleScopeLabelNames(tt.componentUID, tt.projectUID, tt.environmentUID)
+			if len(got) != tt.wantLen {
+				t.Errorf("BuildHubbleScopeLabelNames() returned %d labels, want %d", len(got), tt.wantLen)
+			}
+			for _, want := range tt.wantContains {
+				found := false
+				for _, label := range got {
+					if label == want {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("BuildHubbleScopeLabelNames() = %v, want to contain %q", got, want)
+				}
+				// Ensure no label_ prefix
+				for _, label := range got {
+					if strings.HasPrefix(label, "label_") {
+						t.Errorf("BuildHubbleScopeLabelNames() label %q must not have label_ prefix", label)
+					}
+				}
 			}
 		})
 	}
@@ -228,34 +349,72 @@ func TestResourceQueryBuilders(t *testing.T) {
 }
 
 func TestHTTPQueryBuilders(t *testing.T) {
-	labelFilter := `label_openchoreo_dev_namespace="test-ns"`
-	sumByClause := "label_openchoreo_dev_component_uid"
-	groupLeftClause := "group_left (label_openchoreo_dev_component_uid)"
+	labelFilter := `openchoreo_dev_namespace="test-ns",openchoreo_dev_component_uid="abc"`
+	sumByClause := "openchoreo_dev_component_uid"
 
 	serverReporter := `reporter="server"`
-	workloadJoin := "destination_namespace, destination_workload"
-	workloadRegex := `^(.*)-[^-]+-[^-]+$`
 
 	tests := []struct {
-		name     string
-		queryFn  func(string, string, string) string
-		contains []string
+		name           string
+		queryFn        func(string, string) string
+		contains       []string
+		notContains    []string
 	}{
-		{"HTTPRequestCount", BuildHTTPRequestCountQuery, []string{"hubble_http_requests_total", serverReporter, workloadJoin, workloadRegex, labelFilter}},
-		{"SuccessfulHTTPRequestCount", BuildSuccessfulHTTPRequestCountQuery, []string{"hubble_http_requests_total", serverReporter, `status=~"^[123]..?$"`, workloadJoin, workloadRegex, labelFilter}},
-		{"UnsuccessfulHTTPRequestCount", BuildUnsuccessfulHTTPRequestCountQuery, []string{"hubble_http_requests_total", serverReporter, `status=~"^[45]..?$"`, workloadJoin, workloadRegex, labelFilter}},
-		{"MeanHTTPRequestLatency", BuildMeanHTTPRequestLatencyQuery, []string{"hubble_http_request_duration_seconds_sum", serverReporter, workloadJoin, workloadRegex, labelFilter}},
-		{"P50Latency", Build50thPercentileHTTPRequestLatencyQuery, []string{"histogram_quantile", "0.5", serverReporter, workloadJoin, workloadRegex, labelFilter}},
-		{"P90Latency", Build90thPercentileHTTPRequestLatencyQuery, []string{"histogram_quantile", "0.9", serverReporter, workloadJoin, workloadRegex, labelFilter}},
-		{"P99Latency", Build99thPercentileHTTPRequestLatencyQuery, []string{"histogram_quantile", "0.99", serverReporter, workloadJoin, workloadRegex, labelFilter}},
+		{
+			"HTTPRequestCount",
+			BuildHTTPRequestCountQuery,
+			[]string{"hubble_http_requests_total", serverReporter, labelFilter, sumByClause},
+			[]string{"kube_pod_labels", "label_replace", "destination_workload"},
+		},
+		{
+			"SuccessfulHTTPRequestCount",
+			BuildSuccessfulHTTPRequestCountQuery,
+			[]string{"hubble_http_requests_total", serverReporter, `status=~"^[123]..?$"`, labelFilter},
+			[]string{"kube_pod_labels", "label_replace"},
+		},
+		{
+			"UnsuccessfulHTTPRequestCount",
+			BuildUnsuccessfulHTTPRequestCountQuery,
+			[]string{"hubble_http_requests_total", serverReporter, `status=~"^[45]..?$"`, labelFilter},
+			[]string{"kube_pod_labels", "label_replace"},
+		},
+		{
+			"MeanHTTPRequestLatency",
+			BuildMeanHTTPRequestLatencyQuery,
+			[]string{"hubble_http_request_duration_seconds_sum", serverReporter, labelFilter},
+			[]string{"kube_pod_labels", "label_replace"},
+		},
+		{
+			"P50Latency",
+			Build50thPercentileHTTPRequestLatencyQuery,
+			[]string{"histogram_quantile", "0.5", serverReporter, labelFilter},
+			[]string{"kube_pod_labels", "label_replace"},
+		},
+		{
+			"P90Latency",
+			Build90thPercentileHTTPRequestLatencyQuery,
+			[]string{"histogram_quantile", "0.9", serverReporter, labelFilter},
+			[]string{"kube_pod_labels", "label_replace"},
+		},
+		{
+			"P99Latency",
+			Build99thPercentileHTTPRequestLatencyQuery,
+			[]string{"histogram_quantile", "0.99", serverReporter, labelFilter},
+			[]string{"kube_pod_labels", "label_replace"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			query := tt.queryFn(labelFilter, sumByClause, groupLeftClause)
+			query := tt.queryFn(labelFilter, sumByClause)
 			for _, want := range tt.contains {
 				if !strings.Contains(query, want) {
 					t.Errorf("%s query = %q, want to contain %q", tt.name, query, want)
+				}
+			}
+			for _, notWant := range tt.notContains {
+				if strings.Contains(query, notWant) {
+					t.Errorf("%s query = %q, should not contain %q", tt.name, query, notWant)
 				}
 			}
 		})

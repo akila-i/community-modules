@@ -16,7 +16,8 @@ const (
 	LabelNamespace      = "openchoreo.dev/namespace"
 )
 
-// prometheusLabelName converts a Kubernetes label name to a Prometheus metric label name.
+// prometheusLabelName converts a Kubernetes label name to a kube-state-metrics style
+// Prometheus label name (with "label_" prefix).
 // e.g., "openchoreo.dev/component-uid" becomes "label_openchoreo_dev_component_uid"
 func prometheusLabelName(kubernetesLabel string) string {
 	label := strings.ReplaceAll(kubernetesLabel, "-", "_")
@@ -25,7 +26,17 @@ func prometheusLabelName(kubernetesLabel string) string {
 	return "label_" + label
 }
 
-// BuildLabelFilter builds a Prometheus label filter string for component identification.
+// hubbleLabelName converts a Kubernetes label name to the Prometheus label name used by
+// Hubble when embedding pod labels directly into metrics (no "label_" prefix).
+// e.g., "openchoreo.dev/component-uid" becomes "openchoreo_dev_component_uid"
+func hubbleLabelName(kubernetesLabel string) string {
+	label := strings.ReplaceAll(kubernetesLabel, "-", "_")
+	label = strings.ReplaceAll(label, ".", "_")
+	label = strings.ReplaceAll(label, "/", "_")
+	return label
+}
+
+// BuildLabelFilter builds a Prometheus label filter string for kube_pod_labels queries.
 // If any of the IDs are empty, they are not included in the filter.
 // The namespace is always required and included.
 func BuildLabelFilter(namespace, componentUID, projectUID, environmentUID string) string {
@@ -47,7 +58,28 @@ func BuildLabelFilter(namespace, componentUID, projectUID, environmentUID string
 	return labelFilter
 }
 
-// BuildScopeLabelNames returns the Prometheus label names for whichever of
+// BuildHubbleLabelFilter builds a Prometheus label filter string for Hubble HTTP metrics,
+// where OpenChoreo pod labels are embedded directly into the metric (no "label_" prefix).
+func BuildHubbleLabelFilter(namespace, componentUID, projectUID, environmentUID string) string {
+	namespaceLabel := hubbleLabelName(LabelNamespace)
+	componentLabel := hubbleLabelName(LabelComponentUID)
+	projectLabel := hubbleLabelName(LabelProjectUID)
+	environmentLabel := hubbleLabelName(LabelEnvironmentUID)
+
+	labelFilter := fmt.Sprintf("%s=%q", namespaceLabel, namespace)
+	if componentUID != "" {
+		labelFilter = fmt.Sprintf("%s,%s=%q", labelFilter, componentLabel, componentUID)
+	}
+	if projectUID != "" {
+		labelFilter = fmt.Sprintf("%s,%s=%q", labelFilter, projectLabel, projectUID)
+	}
+	if environmentUID != "" {
+		labelFilter = fmt.Sprintf("%s,%s=%q", labelFilter, environmentLabel, environmentUID)
+	}
+	return labelFilter
+}
+
+// BuildScopeLabelNames returns the kube-state-metrics Prometheus label names for whichever of
 // componentUID, projectUID, and environmentUID are non-empty.
 func BuildScopeLabelNames(componentUID, projectUID, environmentUID string) []string {
 	scopeLabels := make([]string, 0, 3)
@@ -59,6 +91,22 @@ func BuildScopeLabelNames(componentUID, projectUID, environmentUID string) []str
 	}
 	if environmentUID != "" {
 		scopeLabels = append(scopeLabels, prometheusLabelName(LabelEnvironmentUID))
+	}
+	return scopeLabels
+}
+
+// BuildHubbleScopeLabelNames returns the Hubble Prometheus label names for whichever of
+// componentUID, projectUID, and environmentUID are non-empty.
+func BuildHubbleScopeLabelNames(componentUID, projectUID, environmentUID string) []string {
+	scopeLabels := make([]string, 0, 3)
+	if componentUID != "" {
+		scopeLabels = append(scopeLabels, hubbleLabelName(LabelComponentUID))
+	}
+	if projectUID != "" {
+		scopeLabels = append(scopeLabels, hubbleLabelName(LabelProjectUID))
+	}
+	if environmentUID != "" {
+		scopeLabels = append(scopeLabels, hubbleLabelName(LabelEnvironmentUID))
 	}
 	return scopeLabels
 }
@@ -175,205 +223,94 @@ func BuildMemoryLimitsQuery(labelFilter, sumByClause, groupLeftClause string) st
 // ----------------------------
 // HTTP Request Metrics Queries
 // ----------------------------
+// These queries filter directly on Hubble-embedded pod labels (no kube_pod_labels join needed).
 
 // BuildHTTPRequestCountQuery builds a PromQL query for HTTP request count.
-func BuildHTTPRequestCountQuery(labelFilter, sumByClause, groupLeftClause string) string {
+func BuildHTTPRequestCountQuery(labelFilter, sumByClause string) string {
 	return fmt.Sprintf(`
-	    sum by (%s) (
-	        rate(hubble_http_requests_total{reporter="server"}[2m])
-	            * on(destination_namespace, destination_workload) %s
-	            label_replace(
-	                label_replace(
-	                    kube_pod_labels{%s},
-	                    "destination_namespace",
-	                    "$1",
-	                    "namespace",
-	                    "(.*)"
-	                ),
-	                "destination_workload",
-	                "$1",
-	                "pod",
-	                "^(.*)-[^-]+-[^-]+$"
-	            )
-	    )
-	    >= 0
-	`, sumByClause, groupLeftClause, labelFilter)
+    sum by (%s) (
+        rate(hubble_http_requests_total{reporter="server",%s}[2m])
+    )
+    >= 0
+`, sumByClause, labelFilter)
 }
 
 // BuildSuccessfulHTTPRequestCountQuery builds a PromQL query for successful HTTP request count
 // (1xx, 2xx, 3xx).
-func BuildSuccessfulHTTPRequestCountQuery(labelFilter, sumByClause, groupLeftClause string) string {
+func BuildSuccessfulHTTPRequestCountQuery(labelFilter, sumByClause string) string {
 	return fmt.Sprintf(`
-	    sum by (%s) (
-	        rate(hubble_http_requests_total{reporter="server", status=~"^[123]..?$"}[2m])
-	            * on(destination_namespace, destination_workload) %s
-	            label_replace(
-	                label_replace(
-	                    kube_pod_labels{%s},
-	                    "destination_namespace",
-	                    "$1",
-	                    "namespace",
-	                    "(.*)"
-	                ),
-	                "destination_workload",
-	                "$1",
-	                "pod",
-	                "^(.*)-[^-]+-[^-]+$"
-	            )
-	    )
-	    >= 0
-	`, sumByClause, groupLeftClause, labelFilter)
+    sum by (%s) (
+        rate(hubble_http_requests_total{reporter="server",status=~"^[123]..?$",%s}[2m])
+    )
+    >= 0
+`, sumByClause, labelFilter)
 }
 
 // BuildUnsuccessfulHTTPRequestCountQuery builds a PromQL query for unsuccessful HTTP request
 // count (4xx, 5xx).
-func BuildUnsuccessfulHTTPRequestCountQuery(labelFilter, sumByClause, groupLeftClause string) string {
+func BuildUnsuccessfulHTTPRequestCountQuery(labelFilter, sumByClause string) string {
 	return fmt.Sprintf(`
-	    sum by (%s) (
-	        rate(hubble_http_requests_total{reporter="server", status=~"^[45]..?$"}[2m])
-	            * on(destination_namespace, destination_workload) %s
-	            label_replace(
-	                label_replace(
-	                    kube_pod_labels{%s},
-	                    "destination_namespace",
-	                    "$1",
-	                    "namespace",
-	                    "(.*)"
-	                ),
-	                "destination_workload",
-	                "$1",
-	                "pod",
-	                "^(.*)-[^-]+-[^-]+$"
-	            )
-	    )
-	    >= 0
-	`, sumByClause, groupLeftClause, labelFilter)
+    sum by (%s) (
+        rate(hubble_http_requests_total{reporter="server",status=~"^[45]..?$",%s}[2m])
+    )
+    >= 0
+`, sumByClause, labelFilter)
 }
 
 // BuildMeanHTTPRequestLatencyQuery builds a PromQL query for mean HTTP request latency.
-func BuildMeanHTTPRequestLatencyQuery(labelFilter, sumByClause, groupLeftClause string) string {
+func BuildMeanHTTPRequestLatencyQuery(labelFilter, sumByClause string) string {
 	return fmt.Sprintf(`
-	    (
-	        sum by (%s) (
-	            rate(hubble_http_request_duration_seconds_sum{reporter="server"}[2m])
-	                * on(destination_namespace, destination_workload) %s
-	                label_replace(
-	                    label_replace(
-	                        kube_pod_labels{%s},
-	                        "destination_namespace",
-	                        "$1",
-	                        "namespace",
-	                        "(.*)"
-	                    ),
-	                    "destination_workload",
-	                    "$1",
-	                    "pod",
-	                    "^(.*)-[^-]+-[^-]+$"
-	                )
-	        )
-	        /
-	        sum by (%s) (
-	            rate(hubble_http_requests_total{reporter="server"}[2m])
-	                * on(destination_namespace, destination_workload) %s
-	                label_replace(
-	                    label_replace(
-	                        kube_pod_labels{%s},
-	                        "destination_namespace",
-	                        "$1",
-	                        "namespace",
-	                        "(.*)"
-	                    ),
-	                    "destination_workload",
-	                    "$1",
-	                    "pod",
-	                    "^(.*)-[^-]+-[^-]+$"
-	                )
-	        )
-	    )
-	    >= 0
-	`, sumByClause, groupLeftClause, labelFilter, sumByClause, groupLeftClause, labelFilter)
+    (
+        sum by (%s) (
+            rate(hubble_http_request_duration_seconds_sum{reporter="server",%s}[2m])
+        )
+        /
+        sum by (%s) (
+            rate(hubble_http_requests_total{reporter="server",%s}[2m])
+        )
+    )
+    >= 0
+`, sumByClause, labelFilter, sumByClause, labelFilter)
 }
 
 // Build50thPercentileHTTPRequestLatencyQuery builds a PromQL query for 50th percentile HTTP request latency.
-func Build50thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause, groupLeftClause string) string {
+func Build50thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause string) string {
 	histogramSumByClause := BuildHistogramSumByClause(sumByClause)
 	return fmt.Sprintf(`
-	    histogram_quantile(
-	        0.5,
-	        sum by (%s) (
-	            rate(hubble_http_request_duration_seconds_bucket{reporter="server"}[2m])
-	                * on(destination_namespace, destination_workload) %s
-	                label_replace(
-	                    label_replace(
-	                        kube_pod_labels{%s},
-	                        "destination_namespace",
-	                        "$1",
-	                        "namespace",
-	                        "(.*)"
-	                    ),
-	                    "destination_workload",
-	                    "$1",
-	                    "pod",
-	                    "^(.*)-[^-]+-[^-]+$"
-	                )
-	        )
-	    )
-	    >= 0
-	`, histogramSumByClause, groupLeftClause, labelFilter)
+    histogram_quantile(
+        0.5,
+        sum by (%s) (
+            rate(hubble_http_request_duration_seconds_bucket{reporter="server",%s}[2m])
+        )
+    )
+    >= 0
+`, histogramSumByClause, labelFilter)
 }
 
 // Build90thPercentileHTTPRequestLatencyQuery builds a PromQL query for 90th percentile HTTP request latency.
-func Build90thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause, groupLeftClause string) string {
+func Build90thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause string) string {
 	histogramSumByClause := BuildHistogramSumByClause(sumByClause)
 	return fmt.Sprintf(`
-	    histogram_quantile(
-	        0.9,
-	        sum by (%s) (
-	            rate(hubble_http_request_duration_seconds_bucket{reporter="server"}[2m])
-	                * on(destination_namespace, destination_workload) %s
-	                label_replace(
-	                    label_replace(
-	                        kube_pod_labels{%s},
-	                        "destination_namespace",
-	                        "$1",
-	                        "namespace",
-	                        "(.*)"
-	                    ),
-	                    "destination_workload",
-	                    "$1",
-	                    "pod",
-	                    "^(.*)-[^-]+-[^-]+$"
-	                )
-	        )
-	    )
-	    >= 0
-	`, histogramSumByClause, groupLeftClause, labelFilter)
+    histogram_quantile(
+        0.9,
+        sum by (%s) (
+            rate(hubble_http_request_duration_seconds_bucket{reporter="server",%s}[2m])
+        )
+    )
+    >= 0
+`, histogramSumByClause, labelFilter)
 }
 
 // Build99thPercentileHTTPRequestLatencyQuery builds a PromQL query for 99th percentile HTTP request latency.
-func Build99thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause, groupLeftClause string) string {
+func Build99thPercentileHTTPRequestLatencyQuery(labelFilter, sumByClause string) string {
 	histogramSumByClause := BuildHistogramSumByClause(sumByClause)
 	return fmt.Sprintf(`
-	    histogram_quantile(
-	        0.99,
-	        sum by (%s) (
-	            rate(hubble_http_request_duration_seconds_bucket{reporter="server"}[2m])
-	                * on(destination_namespace, destination_workload) %s
-	                label_replace(
-	                    label_replace(
-	                        kube_pod_labels{%s},
-	                        "destination_namespace",
-	                        "$1",
-	                        "namespace",
-	                        "(.*)"
-	                    ),
-	                    "destination_workload",
-	                    "$1",
-	                    "pod",
-	                    "^(.*)-[^-]+-[^-]+$"
-	                )
-	        )
-	    )
-	    >= 0
-	`, histogramSumByClause, groupLeftClause, labelFilter)
+    histogram_quantile(
+        0.99,
+        sum by (%s) (
+            rate(hubble_http_request_duration_seconds_bucket{reporter="server",%s}[2m])
+        )
+    )
+    >= 0
+`, histogramSumByClause, labelFilter)
 }
