@@ -34,6 +34,7 @@ type MetricsHandler struct {
 	observerClient *observer.Client
 	alertNamespace string
 	logger         *slog.Logger
+	httpQuerier    prometheus.HTTPMetricsQuerier
 }
 
 func NewMetricsHandler(
@@ -42,6 +43,7 @@ func NewMetricsHandler(
 	observerClient *observer.Client,
 	alertNamespace string,
 	logger *slog.Logger,
+	httpQuerier prometheus.HTTPMetricsQuerier,
 ) *MetricsHandler {
 	return &MetricsHandler{
 		promClient:     promClient,
@@ -49,6 +51,7 @@ func NewMetricsHandler(
 		observerClient: observerClient,
 		alertNamespace: alertNamespace,
 		logger:         logger,
+		httpQuerier:    httpQuerier,
 	}
 }
 
@@ -116,10 +119,6 @@ func (h *MetricsHandler) QueryMetrics(ctx context.Context, request gen.QueryMetr
 	groupLeftClause := prometheus.BuildGroupLeftClause(scopeLabels)
 	sumByClause := prometheus.BuildSumByClause("", scopeLabels)
 
-	hubbleLabelFilter := prometheus.BuildHubbleLabelFilter(scope.Namespace, componentUID, projectUID, environmentUID)
-	hubbleScopeLabels := prometheus.BuildHubbleScopeLabelNames(componentUID, projectUID, environmentUID)
-	hubbleSumByClause := prometheus.BuildSumByClause("", hubbleScopeLabels)
-
 	startTime := request.Body.StartTime
 	endTime := request.Body.EndTime
 
@@ -127,7 +126,7 @@ func (h *MetricsHandler) QueryMetrics(ctx context.Context, request gen.QueryMetr
 	case gen.Resource:
 		return h.queryResourceMetrics(ctx, labelFilter, sumByClause, groupLeftClause, startTime, endTime, step)
 	case gen.Http:
-		return h.queryHTTPMetrics(ctx, hubbleLabelFilter, hubbleSumByClause, startTime, endTime, step)
+		return h.queryHTTPMetrics(ctx, scope.Namespace, componentUID, projectUID, environmentUID, startTime, endTime, step)
 	default:
 		return badRequestMetrics(fmt.Sprintf("unknown metric type: %s", request.Body.Metric)), nil
 	}
@@ -210,10 +209,14 @@ func (h *MetricsHandler) queryResourceMetrics(
 
 func (h *MetricsHandler) queryHTTPMetrics(
 	ctx context.Context,
-	labelFilter, sumByClause string,
+	namespace, componentUID, projectUID, environmentUID string,
 	startTime, endTime time.Time,
 	step time.Duration,
 ) (gen.QueryMetricsResponseObject, error) {
+	labelFilter := h.httpQuerier.LabelFilter(namespace, componentUID, projectUID, environmentUID)
+	scopeLabels := h.httpQuerier.ScopeLabelNames(componentUID, projectUID, environmentUID)
+	sumByClause := prometheus.BuildSumByClause("", scopeLabels)
+
 	result := gen.HttpMetricsTimeSeries{}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -226,13 +229,13 @@ func (h *MetricsHandler) queryHTTPMetrics(
 	}
 
 	queries := []querySpec{
-		{"requestCount", prometheus.BuildHTTPRequestCountQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.RequestCount = items }},
-		{"successfulRequestCount", prometheus.BuildSuccessfulHTTPRequestCountQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.SuccessfulRequestCount = items }},
-		{"unsuccessfulRequestCount", prometheus.BuildUnsuccessfulHTTPRequestCountQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.UnsuccessfulRequestCount = items }},
-		{"meanLatency", prometheus.BuildMeanHTTPRequestLatencyQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.MeanLatency = items }},
-		{"latencyP50", prometheus.Build50thPercentileHTTPRequestLatencyQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.LatencyP50 = items }},
-		{"latencyP90", prometheus.Build90thPercentileHTTPRequestLatencyQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.LatencyP90 = items }},
-		{"latencyP99", prometheus.Build99thPercentileHTTPRequestLatencyQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.LatencyP99 = items }},
+		{"requestCount", h.httpQuerier.RequestCountQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.RequestCount = items }},
+		{"successfulRequestCount", h.httpQuerier.SuccessfulRequestCountQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.SuccessfulRequestCount = items }},
+		{"unsuccessfulRequestCount", h.httpQuerier.UnsuccessfulRequestCountQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.UnsuccessfulRequestCount = items }},
+		{"meanLatency", h.httpQuerier.MeanLatencyQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.MeanLatency = items }},
+		{"latencyP50", h.httpQuerier.P50LatencyQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.LatencyP50 = items }},
+		{"latencyP90", h.httpQuerier.P90LatencyQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.LatencyP90 = items }},
+		{"latencyP99", h.httpQuerier.P99LatencyQuery, func(items *[]gen.MetricsTimeSeriesItem) { result.LatencyP99 = items }},
 	}
 
 	for _, q := range queries {

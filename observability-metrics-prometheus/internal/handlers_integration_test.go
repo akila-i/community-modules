@@ -68,7 +68,7 @@ func TestHealth_WithPrometheusClient(t *testing.T) {
 		t.Fatalf("failed to create prometheus client: %v", err)
 	}
 
-	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger())
+	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 
 	resp, err := handler.Health(context.Background(), gen.HealthRequestObject{})
 	if err != nil {
@@ -97,7 +97,7 @@ func TestHealth_PrometheusDown(t *testing.T) {
 		t.Fatalf("failed to create prometheus client: %v", err)
 	}
 
-	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger())
+	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 
 	resp, err := handler.Health(context.Background(), gen.HealthRequestObject{})
 	if err != nil {
@@ -123,7 +123,7 @@ func TestQueryResourceMetrics_Success(t *testing.T) {
 		t.Fatalf("failed to create prometheus client: %v", err)
 	}
 
-	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger())
+	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 
 	body := gen.MetricsQueryRequest{
 		Metric:    gen.Resource,
@@ -154,7 +154,7 @@ func TestQueryHTTPMetrics_Success(t *testing.T) {
 		t.Fatalf("failed to create prometheus client: %v", err)
 	}
 
-	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger())
+	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 
 	body := gen.MetricsQueryRequest{
 		Metric:    gen.Http,
@@ -185,7 +185,7 @@ func TestQueryMetrics_UnknownMetricType(t *testing.T) {
 		t.Fatalf("failed to create prometheus client: %v", err)
 	}
 
-	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger())
+	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 
 	body := gen.MetricsQueryRequest{
 		Metric:    "unknown",
@@ -219,7 +219,7 @@ func TestQueryMetrics_PrometheusError(t *testing.T) {
 		t.Fatalf("failed to create prometheus client: %v", err)
 	}
 
-	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger())
+	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 
 	body := gen.MetricsQueryRequest{
 		Metric:    gen.Resource,
@@ -287,7 +287,7 @@ func TestQueryMetrics_WithCustomStep(t *testing.T) {
 		t.Fatalf("failed to create prometheus client: %v", err)
 	}
 
-	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger())
+	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 
 	step := "10m"
 	body := gen.MetricsQueryRequest{

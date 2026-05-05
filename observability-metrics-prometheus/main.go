@@ -56,7 +56,7 @@ func main() {
 	}
 
 	observerClient := observer.NewClient(cfg.ObserverAPIInternalURL)
-	metricsHandler := app.NewMetricsHandler(promClient, k8sClient, observerClient, cfg.AlertRuleNamespace, logger)
+	metricsHandler := app.NewMetricsHandler(promClient, k8sClient, observerClient, cfg.AlertRuleNamespace, logger, prometheus.HubbleQuerier{})
 	srv := app.NewServer(cfg.ServerPort, metricsHandler, logger)
 
 	serverErrCh := make(chan error, 1)

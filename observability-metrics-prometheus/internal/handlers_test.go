@@ -33,7 +33,7 @@ func newTestHandler(observerURL string) *MetricsHandler {
 	if observerURL != "" {
 		obsClient = observer.NewClient(observerURL)
 	}
-	return NewMetricsHandler(nil, nil, obsClient, "test-ns", testLogger())
+	return NewMetricsHandler(nil, nil, obsClient, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 }
 
 // newTestHandlerWithPromClient creates a test handler with a non-nil Prometheus client
@@ -60,7 +60,7 @@ func newTestHandlerWithPromClient(t *testing.T) (*MetricsHandler, *httptest.Serv
 		t.Fatalf("failed to create prometheus client: %v", err)
 	}
 
-	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger())
+	handler := NewMetricsHandler(promClient, nil, nil, "test-ns", testLogger(), prometheus.HubbleQuerier{})
 	return handler, mockServer
 }
 
