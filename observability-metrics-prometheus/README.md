@@ -27,7 +27,7 @@ helm upgrade --install observability-metrics-prometheus \
   oci://ghcr.io/openchoreo/helm-charts/observability-metrics-prometheus \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.2
+  --version 0.6.0
 ```
 
 ### Multi-cluster topology
@@ -39,7 +39,7 @@ helm upgrade --install observability-metrics-prometheus \
   oci://ghcr.io/openchoreo/helm-charts/observability-metrics-prometheus \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.2 \
+  --version 0.6.0 \
   --set global.installationMode="multiClusterReceiver" \
   --set-json 'prometheusCustomizations.http.hostnames=["prometheus.observability.example.com"]'
 ```
@@ -53,7 +53,7 @@ helm upgrade --install observability-metrics-prometheus \
   oci://ghcr.io/openchoreo/helm-charts/observability-metrics-prometheus \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.2 \
+  --version 0.6.0 \
   --set global.installationMode="multiClusterExporter" \
   --set prometheusCustomizations.http.observabilityPlaneUrl=http://prometheus.observability.example.com:9091/api/v1/write \
   --set kube-prometheus-stack.prometheus.enabled=false \
@@ -64,10 +64,10 @@ helm upgrade --install observability-metrics-prometheus \
 
 #### Exporter configuration options
 
-| Option                                                          | Default    | Description                                                                           |
-| --------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------- |
-| `prometheusCustomizations.http.observabilityPlaneUrl`           | (required) | Central receiver URL for remote write. The URL hostname is used as the `Host` header. |
-| `prometheusCustomizations.remoteWrite.tlsInsecureSkipVerify`    | `false`    | Skip TLS certificate verification for self-signed certs on the receiver.              |
+| Option                                                       | Default    | Description                                                                           |
+| ------------------------------------------------------------ | ---------- | ------------------------------------------------------------------------------------- |
+| `prometheusCustomizations.http.observabilityPlaneUrl`        | (required) | Central receiver URL for remote write. The URL hostname is used as the `Host` header. |
+| `prometheusCustomizations.remoteWrite.tlsInsecureSkipVerify` | `false`    | Skip TLS certificate verification for self-signed certs on the receiver.              |
 
 ## Verification
 
@@ -118,12 +118,11 @@ If remote write from exporter to receiver is failing:
 3. Check that queue capacity and batch settings are appropriate for your metrics volume
 4. Monitor central Prometheus for import errors: `rate(prometheus_tsdb_symbol_table_size_bytes[5m])`
 
-
 ## Compatibility
 
 > **Note:** The Helm chart versions specified in the installation commands above are for the latest module version compatible with the development version of OpenChoreo. Refer to the compatibility table below to determine the appropriate module version for your OpenChoreo installation.
 
 | Module Version | OpenChoreo Version |
-|----------------|--------------------|
+| -------------- | ------------------ |
 | >= v0.4.x      | v1.1.x             |
 | v0.3.x         | v1.0.x             |
