@@ -120,7 +120,7 @@ If remote write from exporter to receiver is failing:
 
 ## Compatibility
 
-> **Note:** The Helm chart versions specified in the installation commands above are for the latest module version compatible with the development version of OpenChoreo. Refer to the compatibility table below to determine the appropriate module version for your OpenChoreo installation.
+> **Note:** The Helm chart versions specified in the installation commands above reflect the latest module version and is compatible with the development version of OpenChoreo. Refer to the compatibility table below to determine the appropriate module version for your OpenChoreo installation.
 
 | Module Version | OpenChoreo Version |
 | -------------- | ------------------ |

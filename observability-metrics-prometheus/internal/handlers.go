@@ -852,16 +852,16 @@ func serverErrorMetrics(detail string) gen.QueryMetrics500JSONResponse {
 }
 
 // ----------------------------
-// Runtime topoloy
+// Runtime topology
 // ----------------------------
 
 // QueryRuntimeTopology returns the live HTTP traffic topology (nodes + edges
 // with aggregated metrics) for a project in a given environment.
 //
-// Current implementation scope (minimal scaffolding):
+// Current implementation scope:
 //   - component -> component edges via Hubble's hubble_http_requests_total,
 //     aggregated by (source component UID, destination component UID).
-//   - request count only — error count and latency percentiles are TODO.
+//   - request count, error count, mean latency, and p50/p90/p99 percentiles.
 //   - gateway -> component and component -> external edges are TODO.
 //   - per-node aggregates are TODO.
 func (h *MetricsHandler) QueryRuntimeTopology(
@@ -903,9 +903,10 @@ func (h *MetricsHandler) QueryRuntimeTopology(
 	labelFilter := prometheus.BuildRuntimeTopologyLabelFilter(scope.Namespace, "", projectUID, environmentUID)
 
 	type runtimeTopologyQuerySpec struct {
-		name    string
-		queryFn func(string) string
-		dest    *map[edgeKey]float64
+		name      string
+		queryFn   func(string) string
+		dest      *map[edgeKey]float64
+		namesDest *map[edgeKey]edgeNames // only set for the request-count query
 	}
 
 	var (
@@ -917,27 +918,28 @@ func (h *MetricsHandler) QueryRuntimeTopology(
 		p50LatencyMap   = map[edgeKey]float64{}
 		p90LatencyMap   = map[edgeKey]float64{}
 		p99LatencyMap   = map[edgeKey]float64{}
+		namesMap        = map[edgeKey]edgeNames{}
 	)
 
 	queries := []runtimeTopologyQuerySpec{
 		{"requestCount", func(f string) string {
 			return prometheus.BuildRuntimeTopologyComponentEdgeRequestCountQuery(durationStr, f)
-		}, &requestCountMap},
+		}, &requestCountMap, &namesMap},
 		{"errorCount", func(f string) string {
 			return prometheus.BuildRuntimeTopologyComponentEdgeErrorCountQuery(durationStr, f)
-		}, &errorCountMap},
+		}, &errorCountMap, nil},
 		{"avgLatency", func(f string) string {
 			return prometheus.BuildRuntimeTopologyComponentEdgeMeanLatencyQuery(durationStr, f)
-		}, &avgLatencyMap},
+		}, &avgLatencyMap, nil},
 		{"p50Latency", func(f string) string {
 			return prometheus.BuildRuntimeTopologyComponentEdgeLatencyPercentileQuery("0.5", durationStr, f)
-		}, &p50LatencyMap},
+		}, &p50LatencyMap, nil},
 		{"p90Latency", func(f string) string {
 			return prometheus.BuildRuntimeTopologyComponentEdgeLatencyPercentileQuery("0.9", durationStr, f)
-		}, &p90LatencyMap},
+		}, &p90LatencyMap, nil},
 		{"p99Latency", func(f string) string {
 			return prometheus.BuildRuntimeTopologyComponentEdgeLatencyPercentileQuery("0.99", durationStr, f)
-		}, &p99LatencyMap},
+		}, &p99LatencyMap, nil},
 	}
 
 	var wg sync.WaitGroup
@@ -957,9 +959,12 @@ func (h *MetricsHandler) QueryRuntimeTopology(
 				mu.Unlock()
 				return
 			}
-			m := buildEdgeMetricMap(resp.Data.Result, componentUIDFilter)
+			m, names := buildEdgeMetricMap(resp.Data.Result, componentUIDFilter)
 			mu.Lock()
 			*q.dest = m
+			if q.namesDest != nil {
+				*q.namesDest = names
+			}
 			mu.Unlock()
 		}(q)
 	}
@@ -972,6 +977,7 @@ func (h *MetricsHandler) QueryRuntimeTopology(
 
 	edges := buildRuntimeTopologyEdges(
 		scope.Namespace, projectUID,
+		namesMap,
 		requestCountMap, errorCountMap, avgLatencyMap, p50LatencyMap, p90LatencyMap, p99LatencyMap,
 	)
 
@@ -988,22 +994,30 @@ func (h *MetricsHandler) QueryRuntimeTopology(
 	return runtimeTopologyOKResponse(response), nil
 }
 
-// edgeKey identifies a directed HTTP edge between two components. UIDs are the
-// stable identity; names come from the same pod labels and are carried for the response.
+// edgeKey identifies a directed HTTP edge between two components by UID only.
+// UIDs are the stable identity across all parallel metric queries.
 type edgeKey struct {
-	srcUID  string
-	dstUID  string
+	srcUID string
+	dstUID string
+}
+
+// edgeNames carries display names for an edge, derived from pod labels. Names
+// are sourced from the request-count query only so all metric maps share the
+// same UID-keyed identity.
+type edgeNames struct {
 	srcName string
 	dstName string
 }
 
 // buildEdgeMetricMap converts Prometheus instant query results into a map from
-// edge key to metric value. UIDs are required; names are included when present.
+// edge key (UIDs only) to metric value, and a secondary map of display names.
+// UIDs are required; names are best-effort from pod labels.
 func buildEdgeMetricMap(
 	series []prometheus.TimeSeries,
 	componentUIDFilter string,
-) map[edgeKey]float64 {
+) (map[edgeKey]float64, map[edgeKey]edgeNames) {
 	m := make(map[edgeKey]float64, len(series))
+	names := make(map[edgeKey]edgeNames, len(series))
 	for _, ts := range series {
 		srcUID := ts.Metric[prometheus.RuntimeTopologySrcComponentUIDLabel]
 		dstUID := ts.Metric[prometheus.RuntimeTopologyDstComponentUIDLabel]
@@ -1013,22 +1027,27 @@ func buildEdgeMetricMap(
 		if componentUIDFilter != "" && srcUID != componentUIDFilter && dstUID != componentUIDFilter {
 			continue
 		}
-		srcName := ts.Metric[prometheus.RuntimeTopologySrcComponentNameLabel]
-		dstName := ts.Metric[prometheus.RuntimeTopologyDstComponentNameLabel]
 		points := prometheus.ConvertTimeSeriesToTimeValuePoints(ts)
 		if len(points) == 0 || points[0].Value <= 0 {
 			continue
 		}
-		m[edgeKey{srcUID, dstUID, srcName, dstName}] += points[0].Value
+		key := edgeKey{srcUID, dstUID}
+		m[key] += points[0].Value
+		names[key] = edgeNames{
+			srcName: ts.Metric[prometheus.RuntimeTopologySrcComponentNameLabel],
+			dstName: ts.Metric[prometheus.RuntimeTopologyDstComponentNameLabel],
+		}
 	}
-	return m
+	return m, names
 }
 
 // buildRuntimeTopologyEdges assembles RuntimeTopologyEdge values from per-metric
 // maps. Request count drives which edges exist; other maps default to zero when absent.
+// namesMap carries display names sourced from the request-count query (UID-stable).
 func buildRuntimeTopologyEdges(
 	namespace string,
 	projectUID string,
+	namesMap map[edgeKey]edgeNames,
 	requestCountMap, errorCountMap, avgLatencyMap, p50LatencyMap, p90LatencyMap, p99LatencyMap map[edgeKey]float64,
 ) []gen.RuntimeTopologyEdge {
 	edges := make([]gen.RuntimeTopologyEdge, 0, len(requestCountMap))
@@ -1044,18 +1063,19 @@ func buildRuntimeTopologyEdges(
 		p50Latency := p50LatencyMap[key]
 		p90Latency := p90LatencyMap[key]
 		p99Latency := p99LatencyMap[key]
+		n := namesMap[key]
 
 		var source, target gen.RuntimeTopologyNodeRef
 		_ = source.FromRuntimeTopologyNodeRefComponent(gen.RuntimeTopologyNodeRefComponent{
 			Kind:         gen.RuntimeTopologyNodeRefComponentKindComponent,
-			Component:    key.srcName,
+			Component:    n.srcName,
 			ComponentUid: key.srcUID,
 			ProjectUid:   &proj,
 			Namespace:    &ns,
 		})
 		_ = target.FromRuntimeTopologyNodeRefComponent(gen.RuntimeTopologyNodeRefComponent{
 			Kind:         gen.RuntimeTopologyNodeRefComponentKindComponent,
-			Component:    key.dstName,
+			Component:    n.dstName,
 			ComponentUid: key.dstUID,
 			ProjectUid:   &proj,
 			Namespace:    &ns,
