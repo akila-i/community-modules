@@ -1,0 +1,45 @@
+# Copyright 2026 The OpenChoreo Authors
+# SPDX-License-Identifier: Apache-2.0
+
+# OpenTelemetry Collector Builder (OCB) manifest for the OpenChoreo events
+# collector. It bundles the custom k8seventenrich processor with a curated,
+# minimal set of upstream components — purpose-built, not full contrib, for a
+# smaller image and CVE/SBOM surface. Add components one at a time as real needs
+# arise. Keep the versions here in lockstep with the Dockerfile's builder tag
+# and the module versions in k8seventenrichprocessor/go.mod.
+dist:
+  name: otelcol-openchoreo-events
+  description: "OpenChoreo OpenTelemetry Collector for Kubernetes events, with the k8seventenrich processor"
+  output_path: ./dist
+  otelcol_version: "0.153.0"
+
+receivers:
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/k8seventsreceiver v0.153.0
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.153.0
+
+processors:
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.153.0
+  # The custom processor. `path` adds a replace directive so OCB compiles it
+  # from this local source tree instead of fetching the module from a remote.
+  - gomod: github.com/openchoreo/community-modules/observability-events-otel-collector/k8seventenrichprocessor v0.1.0
+    path: ./k8seventenrichprocessor
+
+exporters:
+  # OpenSearch.
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/opensearchexporter v0.153.0
+  # OTLP — covers OpenObserve (native OTLP/HTTP ingest) and any OTLP backend.
+  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.153.0
+  - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.153.0
+  # AWS CloudWatch Logs (pulls the AWS SDK — significant size).
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/awscloudwatchlogsexporter v0.153.0
+  # Default backend-agnostic exporter — dumps enriched events to stdout.
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.153.0
+
+extensions:
+  # Supplies basic-auth credentials to the opensearch exporter's HTTP client.
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/basicauthextension v0.153.0
+  # Persists the receiver's watch resourceVersion on a PVC so a pod restart does
+  # not re-emit already-seen events (restart-replay de-duplication).
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.153.0
+  # Liveness/readiness endpoint for Kubernetes probes.
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.153.0

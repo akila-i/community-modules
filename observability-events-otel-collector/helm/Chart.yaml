@@ -1,0 +1,21 @@
+# Copyright 2026 The OpenChoreo Authors
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: observability-events-otel-collector
+description: A custom OpenTelemetry Collector for OpenChoreo that watches Kubernetes events and enriches them with their involved object's labels, annotations, and owner reference.
+type: application
+# version is the chart version AND the published image tag (see ../module.yaml
+# and the repo CI). appVersion is the deployment's default image tag — keep the
+# two equal so the chart pulls the image built from the same commit.
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - openchoreo
+  - observability
+  - events
+  - opentelemetry
+  - kubernetes
+maintainers:
+  - name: OpenChoreo Team
+home: https://github.com/openchoreo/community-modules

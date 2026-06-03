@@ -4,5 +4,11 @@
 # Helm downloaded dependencies (reproducible via helm dependency build)
 **/helm/charts/*.tgz
 
+# OpenTelemetry Collector Builder (OCB) output
+**/dist/
+
+# Go coverage profiles emitted by a module's `make unit-test`
+*-coverage.out
+
 # macOS
 .DS_Store

@@ -1,0 +1,156 @@
+# Copyright 2026 The OpenChoreo Authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Override the generated resource names (optional).
+fullnameOverride: ""
+
+# ── Collector workload ──────────────────────────────────────────────────────
+collector:
+  # Must be 0 or 1 (the chart rejects higher). The k8seventsreceiver is not
+  # horizontally scalable and the processor's informer caches assume a single
+  # collector owns the event stream; running two would duplicate events.
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/openchoreo/observability-events-otel-collector
+    # tag defaults to .Chart.AppVersion (the image built from this chart's commit).
+    tag: ""
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+  # Collector self-telemetry log level (debug | info | warn | error).
+  logLevel: info
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      # No CPU limit by design (avoid CFS throttling). Memory scales with the
+      # number of objects in the watched-kind caches; raise for large clusters.
+      memory: 512Mi
+
+  # Hardened by default: non-root, read-only root filesystem, no extra caps.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Extra environment variables for the collector container — typically backend
+  # credentials pulled from a secret (referenced by ${env:VAR} in exporters).
+  extraEnv: []
+  #  - name: OPENSEARCH_USERNAME
+  #    valueFrom:
+  #      secretKeyRef:
+  #        name: opensearch-admin-credentials
+  #        key: username
+
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ── RBAC ────────────────────────────────────────────────────────────────────
+# The collector needs cluster-wide get/list/watch on events (receiver) and on
+# every watched workload kind (processor informer caches). The ClusterRole grant
+# must stay in sync with the kinds registered in kinds.go.
+rbac:
+  create: true
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ── Restart-replay de-duplication ───────────────────────────────────────────
+# Persists the receiver's watch resourceVersion on a PVC (via the file_storage
+# extension) so a pod restart does not re-emit already-seen events. Disabled by
+# default for a zero-dependency install (a restart may then re-emit recent
+# events). To enable, set enabled=true and provide a storageClassName (or ensure
+# the cluster has a default StorageClass).
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClassName: ""
+  accessMode: ReadWriteOnce
+  mountPath: /var/lib/otelcol/storage
+
+# ── Enrichment (k8seventenrich processor) ───────────────────────────────────
+# Rendered verbatim under `processors.k8seventenrich`, so this maps 1:1 to the
+# processor's config schema (see k8seventenrichprocessor/README.md). Prefixes
+# default in code when omitted. include = allow-list (empty = all); exclude =
+# deny-list (setting it replaces the default, it is not merged).
+enrichment:
+  resync_period: 10m
+  # How long to wait for informer caches to warm up before failing startup.
+  # Raise for large or slow clusters; if you raise it past the startup-probe
+  # budget (~5m by default), also raise the probe in the deployment.
+  # cache_sync_timeout: 2m
+  labels:
+    enabled: true
+    # include: ["core.choreo.dev/component", "core.choreo.dev/project"]
+    # exclude: ["pod-template-hash", "controller-revision-hash"]
+  annotations:
+    # Disabled by default: annotations are noisy (helm/kubectl/CNI dumps) and
+    # may carry sensitive values. Enable explicitly, ideally with an `include`
+    # allow-list. The last-applied dump stays excluded even when enabled.
+    enabled: false
+    # include: ["prometheus.io/scrape"]
+    exclude:
+      - kubectl.kubernetes.io/last-applied-configuration
+  owner_references:
+    enabled: true
+
+# ── Exporters (backend-agnostic) ────────────────────────────────────────────
+# By default the chart ships ONLY the `debug` exporter, which prints enriched
+# events to the pod log. Point at a real backend by overriding `exporters` and
+# `pipelineExporters` (see the README for OpenSearch / OpenObserve / CloudWatch
+# snippets), supplying any credentials via `collector.extraEnv` and auth via
+# `extraExtensions`.
+exporters:
+  debug:
+    verbosity: detailed
+# Exporters wired into the logs pipeline (must be keys present in `exporters`).
+pipelineExporters:
+  - debug
+
+# Extra collector extensions rendered verbatim under `extensions:` (e.g. a
+# basicauth extension for the OpenSearch exporter). Every key defined here is
+# automatically added to the active service extensions list.
+extraExtensions: {}
+#   basicauth/opensearch:
+#     client_auth:
+#       username: ${env:OPENSEARCH_USERNAME}
+#       password: ${env:OPENSEARCH_PASSWORD}
+
+# ── Optional Service ────────────────────────────────────────────────────────
+# Not needed for the default events pipeline (no inbound traffic). Enable to
+# expose the health endpoint, OTLP ingest, or the collector's internal metrics.
+service:
+  enabled: false
+  type: ClusterIP
+  ports:
+    - name: health
+      port: 13133
+      targetPort: 13133
+    # - name: otlp-grpc
+    #   port: 4317
+    #   targetPort: 4317
+    # - name: otlp-http
+    #   port: 4318
+    #   targetPort: 4318
+
+# ── Full-config escape hatch ────────────────────────────────────────────────
+# If set (non-empty), this raw map REPLACES the entire rendered collector config
+# above. Use it for advanced pipelines the structured values don't cover. You
+# own the whole config — extensions, receiver storage, pipelines, everything.
+configOverride: {}
