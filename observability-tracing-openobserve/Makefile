@@ -10,6 +10,7 @@ oapi-codegen-install:
 openapi-codegen: oapi-codegen-install
 	cd $(CFG_DIR) && $(shell go env GOPATH)/bin/oapi-codegen --config cfg-models.yaml $(SPEC)
 	cd $(CFG_DIR) && $(shell go env GOPATH)/bin/oapi-codegen --config cfg-server.yaml $(SPEC)
+	cd $(CFG_DIR) && $(shell go env GOPATH)/bin/oapi-codegen --config cfg-client.yaml $(SPEC)
 
 MODULE_NAME := $(notdir $(CURDIR))
 
