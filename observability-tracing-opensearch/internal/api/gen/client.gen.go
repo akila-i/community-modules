@@ -99,10 +99,8 @@ type ClientInterface interface {
 
 	QuerySpansForTrace(ctx context.Context, traceId string, body QuerySpansForTraceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// QuerySpanDetailsForTraceWithBody request with any body
-	QuerySpanDetailsForTraceWithBody(ctx context.Context, traceId string, spanId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	QuerySpanDetailsForTrace(ctx context.Context, traceId string, spanId string, body QuerySpanDetailsForTraceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetSpanDetailsForTrace request
+	GetSpanDetailsForTrace(ctx context.Context, traceId string, spanId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// Health request
 	Health(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -156,20 +154,8 @@ func (c *Client) QuerySpansForTrace(ctx context.Context, traceId string, body Qu
 	return c.Client.Do(req)
 }
 
-func (c *Client) QuerySpanDetailsForTraceWithBody(ctx context.Context, traceId string, spanId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewQuerySpanDetailsForTraceRequestWithBody(c.Server, traceId, spanId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) QuerySpanDetailsForTrace(ctx context.Context, traceId string, spanId string, body QuerySpanDetailsForTraceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewQuerySpanDetailsForTraceRequest(c.Server, traceId, spanId, body)
+func (c *Client) GetSpanDetailsForTrace(ctx context.Context, traceId string, spanId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSpanDetailsForTraceRequest(c.Server, traceId, spanId)
 	if err != nil {
 		return nil, err
 	}
@@ -279,19 +265,8 @@ func NewQuerySpansForTraceRequestWithBody(server string, traceId string, content
 	return req, nil
 }
 
-// NewQuerySpanDetailsForTraceRequest calls the generic QuerySpanDetailsForTrace builder with application/json body
-func NewQuerySpanDetailsForTraceRequest(server string, traceId string, spanId string, body QuerySpanDetailsForTraceJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewQuerySpanDetailsForTraceRequestWithBody(server, traceId, spanId, "application/json", bodyReader)
-}
-
-// NewQuerySpanDetailsForTraceRequestWithBody generates requests for QuerySpanDetailsForTrace with any type of body
-func NewQuerySpanDetailsForTraceRequestWithBody(server string, traceId string, spanId string, contentType string, body io.Reader) (*http.Request, error) {
+// NewGetSpanDetailsForTraceRequest generates requests for GetSpanDetailsForTrace
+func NewGetSpanDetailsForTraceRequest(server string, traceId string, spanId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -323,12 +298,10 @@ func NewQuerySpanDetailsForTraceRequestWithBody(server string, traceId string, s
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", queryURL.String(), body)
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-
-	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -413,10 +386,8 @@ type ClientWithResponsesInterface interface {
 
 	QuerySpansForTraceWithResponse(ctx context.Context, traceId string, body QuerySpansForTraceJSONRequestBody, reqEditors ...RequestEditorFn) (*QuerySpansForTraceResponse, error)
 
-	// QuerySpanDetailsForTraceWithBodyWithResponse request with any body
-	QuerySpanDetailsForTraceWithBodyWithResponse(ctx context.Context, traceId string, spanId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QuerySpanDetailsForTraceResponse, error)
-
-	QuerySpanDetailsForTraceWithResponse(ctx context.Context, traceId string, spanId string, body QuerySpanDetailsForTraceJSONRequestBody, reqEditors ...RequestEditorFn) (*QuerySpanDetailsForTraceResponse, error)
+	// GetSpanDetailsForTraceWithResponse request
+	GetSpanDetailsForTraceWithResponse(ctx context.Context, traceId string, spanId string, reqEditors ...RequestEditorFn) (*GetSpanDetailsForTraceResponse, error)
 
 	// HealthWithResponse request
 	HealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthResponse, error)
@@ -474,7 +445,7 @@ func (r QuerySpansForTraceResponse) StatusCode() int {
 	return 0
 }
 
-type QuerySpanDetailsForTraceResponse struct {
+type GetSpanDetailsForTraceResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *TraceSpanDetailsResponse
@@ -485,7 +456,7 @@ type QuerySpanDetailsForTraceResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r QuerySpanDetailsForTraceResponse) Status() string {
+func (r GetSpanDetailsForTraceResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -493,7 +464,7 @@ func (r QuerySpanDetailsForTraceResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r QuerySpanDetailsForTraceResponse) StatusCode() int {
+func (r GetSpanDetailsForTraceResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -562,21 +533,13 @@ func (c *ClientWithResponses) QuerySpansForTraceWithResponse(ctx context.Context
 	return ParseQuerySpansForTraceResponse(rsp)
 }
 
-// QuerySpanDetailsForTraceWithBodyWithResponse request with arbitrary body returning *QuerySpanDetailsForTraceResponse
-func (c *ClientWithResponses) QuerySpanDetailsForTraceWithBodyWithResponse(ctx context.Context, traceId string, spanId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QuerySpanDetailsForTraceResponse, error) {
-	rsp, err := c.QuerySpanDetailsForTraceWithBody(ctx, traceId, spanId, contentType, body, reqEditors...)
+// GetSpanDetailsForTraceWithResponse request returning *GetSpanDetailsForTraceResponse
+func (c *ClientWithResponses) GetSpanDetailsForTraceWithResponse(ctx context.Context, traceId string, spanId string, reqEditors ...RequestEditorFn) (*GetSpanDetailsForTraceResponse, error) {
+	rsp, err := c.GetSpanDetailsForTrace(ctx, traceId, spanId, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseQuerySpanDetailsForTraceResponse(rsp)
-}
-
-func (c *ClientWithResponses) QuerySpanDetailsForTraceWithResponse(ctx context.Context, traceId string, spanId string, body QuerySpanDetailsForTraceJSONRequestBody, reqEditors ...RequestEditorFn) (*QuerySpanDetailsForTraceResponse, error) {
-	rsp, err := c.QuerySpanDetailsForTrace(ctx, traceId, spanId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseQuerySpanDetailsForTraceResponse(rsp)
+	return ParseGetSpanDetailsForTraceResponse(rsp)
 }
 
 // HealthWithResponse request returning *HealthResponse
@@ -696,15 +659,15 @@ func ParseQuerySpansForTraceResponse(rsp *http.Response) (*QuerySpansForTraceRes
 	return response, nil
 }
 
-// ParseQuerySpanDetailsForTraceResponse parses an HTTP response from a QuerySpanDetailsForTraceWithResponse call
-func ParseQuerySpanDetailsForTraceResponse(rsp *http.Response) (*QuerySpanDetailsForTraceResponse, error) {
+// ParseGetSpanDetailsForTraceResponse parses an HTTP response from a GetSpanDetailsForTraceWithResponse call
+func ParseGetSpanDetailsForTraceResponse(rsp *http.Response) (*GetSpanDetailsForTraceResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &QuerySpanDetailsForTraceResponse{
+	response := &GetSpanDetailsForTraceResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
