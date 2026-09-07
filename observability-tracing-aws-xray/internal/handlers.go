@@ -5,9 +5,7 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
@@ -105,85 +103,47 @@ func (h *TracingHandler) QuerySpansForTrace(ctx context.Context, request gen.Que
 	return gen.QuerySpansForTrace200JSONResponse(toSpansListResponse(result)), nil
 }
 
-// QuerySpanDetailsForTrace implements POST /api/v1alpha1/traces/{traceId}/spans/{spanId},
-// scoping the lookup to the search scope in the request body.
-func (h *TracingHandler) QuerySpanDetailsForTrace(ctx context.Context, request gen.QuerySpanDetailsForTraceRequestObject) (gen.QuerySpanDetailsForTraceResponseObject, error) {
-	if request.Body == nil {
-		return gen.QuerySpanDetailsForTrace400JSONResponse{
-			Title:  ptr(gen.BadRequest),
-			Detail: ptr("request body is required"),
-		}, nil
-	}
-	if strings.TrimSpace(request.Body.SearchScope.Namespace) == "" {
-		return gen.QuerySpanDetailsForTrace400JSONResponse{
-			Title:  ptr(gen.BadRequest),
-			Detail: ptr("namespace is required"),
-		}, nil
-	}
-
+func (h *TracingHandler) GetSpanDetailsForTrace(ctx context.Context, request gen.GetSpanDetailsForTraceRequestObject) (gen.GetSpanDetailsForTraceResponseObject, error) {
 	params := xray.TracesQueryParams{
 		TraceID: request.TraceId,
 		SpanID:  request.SpanId,
-		Scope:   toScope(&request.Body.SearchScope),
 	}
 
 	result, err := h.client.GetSpanDetail(ctx, params)
 	if err != nil {
 		h.logger.Error("Failed to query span detail", slog.Any("error", err))
-		return gen.QuerySpanDetailsForTrace500JSONResponse{
+		detail := err.Error()
+		return gen.GetSpanDetailsForTrace500JSONResponse{
 			Title:  ptr(gen.InternalServerError),
-			Detail: ptr("internal server error"),
+			Detail: &detail,
 		}, nil
 	}
-	if result == nil {
-		// A missing (or scope-filtered) span is an expected lookup miss, and
-		// reporting it identically either way keeps the response from
-		// revealing traces outside the caller's scope.
-		return spanNotFoundResponse{}, nil
-	}
 
-	return gen.QuerySpanDetailsForTrace200JSONResponse(toSpanDetailsResponse(&result.Span)), nil
-}
-
-// spanNotFoundResponse renders a 404 for a missing span. The generated server
-// has no 404 type for this endpoint (the spec omits it), so this implements
-// the response interface directly.
-type spanNotFoundResponse struct{}
-
-func (spanNotFoundResponse) VisitQuerySpanDetailsForTraceResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	return json.NewEncoder(w).Encode(gen.ErrorResponse{
-		Detail: ptr("span not found"),
-	})
-}
-
-// toScope converts a generated search scope to the internal scope.
-func toScope(scope *gen.ComponentSearchScope) xray.Scope {
-	out := xray.Scope{Namespace: scope.Namespace}
-	if scope.Project != nil {
-		out.ProjectID = *scope.Project
-	}
-	if scope.Component != nil {
-		out.ComponentID = *scope.Component
-	}
-	if scope.Environment != nil {
-		out.EnvironmentID = *scope.Environment
-	}
-	return out
+	return gen.GetSpanDetailsForTrace200JSONResponse(toSpanDetailsResponse(&result.Span)), nil
 }
 
 func toTracesQueryParams(req *gen.TracesQueryRequest) xray.TracesQueryParams {
 	params := xray.TracesQueryParams{
 		StartTime: req.StartTime,
 		EndTime:   req.EndTime,
-		Scope:     toScope(&req.SearchScope),
+		Scope: xray.Scope{
+			Namespace: req.SearchScope.Namespace,
+		},
 	}
 	if req.Limit != nil {
 		params.Limit = *req.Limit
 	}
 	if req.SortOrder != nil {
 		params.SortOrder = string(*req.SortOrder)
+	}
+	if req.SearchScope.Project != nil {
+		params.Scope.ProjectID = *req.SearchScope.Project
+	}
+	if req.SearchScope.Component != nil {
+		params.Scope.ComponentID = *req.SearchScope.Component
+	}
+	if req.SearchScope.Environment != nil {
+		params.Scope.EnvironmentID = *req.SearchScope.Environment
 	}
 	if req.IncludeAttributes != nil {
 		params.IncludeAttributes = *req.IncludeAttributes
