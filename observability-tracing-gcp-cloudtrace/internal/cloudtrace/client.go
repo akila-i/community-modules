@@ -199,11 +199,9 @@ func (c *Client) QuerySpans(ctx context.Context, p TracesParams) (*SpansResult, 
 	return result, nil
 }
 
-// GetSpanDetails looks up one span by trace and span ID, scoped to the search
-// scope in p. Returns nil when the trace or span does not exist, or when the
-// trace falls outside the scope. GetTrace carries no filter, so the scope is
-// re-checked against the span labels here, as the spans endpoint does.
-func (c *Client) GetSpanDetails(ctx context.Context, p TracesParams, spanID string) (*Span, error) {
+// GetSpanDetails looks up one span by trace and span ID. Returns nil when
+// the trace or span does not exist.
+func (c *Client) GetSpanDetails(ctx context.Context, traceID, spanID string) (*Span, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
 
@@ -212,11 +210,11 @@ func (c *Client) GetSpanDetails(ctx context.Context, p TracesParams, spanID stri
 		return nil, fmt.Errorf("cloudtrace: invalid span id %q: %w", spanID, err)
 	}
 
-	t, err := c.getTrace(ctx, p.TraceID)
+	t, err := c.getTrace(ctx, traceID)
 	if err != nil {
 		return nil, fmt.Errorf("cloudtrace: GetSpanDetails: %w", err)
 	}
-	if t == nil || !anySpanMatchesScope(t, p) {
+	if t == nil {
 		return nil, nil
 	}
 	for _, s := range t.GetSpans() {
