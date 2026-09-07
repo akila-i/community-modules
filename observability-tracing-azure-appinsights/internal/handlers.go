@@ -21,7 +21,7 @@ const (
 type tracesClient interface {
 	QueryTraces(ctx context.Context, p appinsights.TracesParams) (*appinsights.TracesResult, error)
 	QuerySpans(ctx context.Context, p appinsights.TracesParams) (*appinsights.SpansResult, error)
-	GetSpanDetails(ctx context.Context, traceID, spanID, namespace, projectUID string) (*appinsights.Span, error)
+	GetSpanDetails(ctx context.Context, traceID, spanID string) (*appinsights.Span, error)
 }
 
 type TracingHandler struct {
@@ -122,53 +122,32 @@ func (h *TracingHandler) QuerySpansForTrace(ctx context.Context, request gen.Que
 	return gen.QuerySpansForTrace200JSONResponse(toSpansListResponse(result, params.IncludeAttributes)), nil
 }
 
-// QuerySpanDetailsForTrace implements POST /api/v1alpha1/traces/{traceId}/spans/{spanId},
-// scoping the lookup to the namespace and project UID from the request body's searchScope.
-func (h *TracingHandler) QuerySpanDetailsForTrace(ctx context.Context, request gen.QuerySpanDetailsForTraceRequestObject) (gen.QuerySpanDetailsForTraceResponseObject, error) {
-	if request.Body == nil {
-		return gen.QuerySpanDetailsForTrace400JSONResponse{
-			Title:  ptr(gen.BadRequest),
-			Detail: ptr("request body is required"),
-		}, nil
-	}
-
-	namespace := strings.TrimSpace(request.Body.SearchScope.Namespace)
-	if namespace == "" {
-		return gen.QuerySpanDetailsForTrace400JSONResponse{
-			Title:  ptr(gen.BadRequest),
-			Detail: ptr("namespace is required"),
-		}, nil
-	}
-
+// GetSpanDetailsForTrace implements GET /api/v1alpha1/traces/{traceId}/spans/{spanId}.
+func (h *TracingHandler) GetSpanDetailsForTrace(ctx context.Context, request gen.GetSpanDetailsForTraceRequestObject) (gen.GetSpanDetailsForTraceResponseObject, error) {
 	if !appinsights.ValidID(request.TraceId) || !appinsights.ValidID(request.SpanId) {
-		return gen.QuerySpanDetailsForTrace400JSONResponse{
+		return gen.GetSpanDetailsForTrace400JSONResponse{
 			Title:  ptr(gen.BadRequest),
 			Detail: ptr("traceId and spanId must be hex strings"),
 		}, nil
 	}
 
-	var projectUID string
-	if request.Body.SearchScope.Project != nil {
-		projectUID = strings.TrimSpace(*request.Body.SearchScope.Project)
-	}
-
-	span, err := h.client.GetSpanDetails(ctx, request.TraceId, request.SpanId, namespace, projectUID)
+	span, err := h.client.GetSpanDetails(ctx, request.TraceId, request.SpanId)
 	if err != nil {
 		h.logger.Error("Failed to query span detail", slog.Any("error", err))
-		return gen.QuerySpanDetailsForTrace500JSONResponse{
+		return gen.GetSpanDetailsForTrace500JSONResponse{
 			Title:  ptr(gen.InternalServerError),
 			Detail: ptr("internal server error"),
 		}, nil
 	}
 	if span == nil {
 		detail := "span not found"
-		return gen.QuerySpanDetailsForTrace500JSONResponse{
+		return gen.GetSpanDetailsForTrace500JSONResponse{
 			Title:  ptr(gen.InternalServerError),
 			Detail: &detail,
 		}, nil
 	}
 
-	return gen.QuerySpanDetailsForTrace200JSONResponse(toSpanDetailsResponse(span)), nil
+	return gen.GetSpanDetailsForTrace200JSONResponse(toSpanDetailsResponse(span)), nil
 }
 
 // toTracesParams converts the generated request body to internal query params.

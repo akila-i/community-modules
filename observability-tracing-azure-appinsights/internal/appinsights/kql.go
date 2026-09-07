@@ -74,20 +74,14 @@ func BuildSpansKQL(p TracesParams) string {
 	return sb.String()
 }
 
-// BuildScopedSpanDetailsKQL renders the single-span lookup, scoped to the
-// namespace and project UID from the request's searchScope so a span cannot be
-// read from outside the caller's tenancy.
-func BuildScopedSpanDetailsKQL(traceID, spanID, namespace, projectUID string) string {
+// BuildSpanDetailsKQL renders the single-span lookup.
+func BuildSpanDetailsKQL(traceID, spanID string) string {
 	var sb strings.Builder
 	sb.WriteString(unionHead)
 	sb.WriteString("\n| where OperationId == ")
 	sb.WriteString(kqlString(traceID))
 	sb.WriteString("\n| where Id == ")
 	sb.WriteString(kqlString(spanID))
-	writePropertyFilter(&sb, LabelNamespace, namespace)
-	if projectUID != "" {
-		writePropertyFilter(&sb, LabelProjectUID, projectUID)
-	}
 	sb.WriteString(spanProjection(true))
 	sb.WriteString("\n| take 1")
 	return sb.String()
