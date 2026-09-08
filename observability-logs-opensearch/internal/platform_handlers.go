@@ -88,9 +88,21 @@ func (h *LogsHandler) QueryPlatformLogs(
 	logs := make([]gen.PlatformLog, 0, len(result.Hits.Hits))
 	for _, hit := range result.Hits.Hits {
 		entry := opensearch.ParsePlatformLogEntry(hit)
+
+		// timestamp is required by the contract, and this module owns that guarantee.
+		// The query range-filters on @timestamp, so a returned document has one - a
+		// zero value here means it was absent, not a string, or not RFC3339, i.e. the
+		// document is malformed. Emitting it would put 0001-01-01T00:00:00Z on the
+		// wire as though it were a real reading, so skip it and say which document.
+		if entry.Timestamp.IsZero() {
+			h.logger.Warn("skipping log document with no parseable @timestamp",
+				"docId", hit.ID)
+			continue
+		}
+
 		log := gen.PlatformLog{
-			Timestamp:       ptr(entry.Timestamp),
-			Log:             ptr(entry.Log),
+			Timestamp:       entry.Timestamp,
+			Log:             entry.Log,
 			Level:           optional(entry.LogLevel),
 			ClusterInstance: optional(entry.ClusterInstance),
 			NamespaceName:   optional(entry.NamespaceName),

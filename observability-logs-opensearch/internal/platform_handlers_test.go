@@ -260,7 +260,55 @@ func TestQueryPlatformLogs_UnknownFieldsOmitted(t *testing.T) {
 	if entry.PodName != nil {
 		t.Errorf("podName = %v, want nil", *entry.PodName)
 	}
-	if entry.Log == nil || *entry.Log != "plain line" {
+	if entry.Log != "plain line" {
 		t.Errorf("log = %v", entry.Log)
+	}
+}
+
+// TestQueryPlatformLogs_SkipsUnparseableTimestamp pins the contract guarantee this
+// module owns. timestamp is required on PlatformLog, so a document whose
+// @timestamp is absent or not RFC3339 must not be emitted — serving it would put
+// 0001-01-01T00:00:00Z on the wire as though it were a real reading. The query
+// range-filters on @timestamp, so this only happens for a malformed document.
+func TestQueryPlatformLogs_SkipsUnparseableTimestamp(t *testing.T) {
+	server := platformSearchServer(t, nil, []map[string]interface{}{
+		{
+			"_id":     "malformed",
+			"_source": map[string]interface{}{"log": "no usable timestamp", "@timestamp": "14/08/2026 16:31"},
+		},
+		{
+			"_id":     "missing",
+			"_source": map[string]interface{}{"log": "no timestamp field at all"},
+		},
+		{
+			"_id":     "good",
+			"_source": map[string]interface{}{"log": "usable", "@timestamp": "2026-08-14T16:31:00Z"},
+		},
+	})
+	defer server.Close()
+
+	resp, err := platformHandler(t, server.URL).QueryPlatformLogs(
+		context.Background(),
+		gen.QueryPlatformLogsRequestObject{Body: &gen.PlatformLogsQueryRequest{
+			StartTime: platformStart,
+			EndTime:   platformEnd,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	queryResp, ok := resp.(gen.QueryPlatformLogs200JSONResponse)
+	if !ok {
+		t.Fatalf("expected 200 response, got %T", resp)
+	}
+	if len(queryResp.Logs) != 1 {
+		t.Fatalf("expected only the parseable record, got %d", len(queryResp.Logs))
+	}
+	if queryResp.Logs[0].Log != "usable" {
+		t.Errorf("log = %q, want %q", queryResp.Logs[0].Log, "usable")
+	}
+	if queryResp.Logs[0].Timestamp.IsZero() {
+		t.Error("the surviving record must carry a real timestamp")
 	}
 }
