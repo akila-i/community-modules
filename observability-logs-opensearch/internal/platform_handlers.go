@@ -12,16 +12,16 @@ import (
 	"github.com/openchoreo/community-modules/observability-logs-opensearch/internal/opensearch"
 )
 
-// QueryClusterLogs implements POST /api/v1alpha1/cluster-logs/query.
+// QueryPlatformLogs implements POST /api/v1alpha1/platform-logs/query.
 //
-// Cluster logs share the container-logs-* index with workload logs; what distinguishes
+// Platform logs share the container-logs-* index with workload logs; what distinguishes
 // them is the filter, not the store. There is no scope to resolve here - the observer has
 // already decided who may ask - so this maps the request onto a query and back.
-func (h *LogsHandler) QueryClusterLogs(
-	ctx context.Context, request gen.QueryClusterLogsRequestObject,
-) (gen.QueryClusterLogsResponseObject, error) {
+func (h *LogsHandler) QueryPlatformLogs(
+	ctx context.Context, request gen.QueryPlatformLogsRequestObject,
+) (gen.QueryPlatformLogsResponseObject, error) {
 	if request.Body == nil {
-		return gen.QueryClusterLogs400JSONResponse{
+		return gen.QueryPlatformLogs400JSONResponse{
 			Title:   ptr(gen.BadRequest),
 			Message: ptr("request body is required"),
 		}, nil
@@ -31,7 +31,7 @@ func (h *LogsHandler) QueryClusterLogs(
 	startTime := body.StartTime.Format(time.RFC3339)
 	endTime := body.EndTime.Format(time.RFC3339)
 
-	params := opensearch.ClusterLogsQueryParams{
+	params := opensearch.PlatformLogsQueryParams{
 		StartTime:        startTime,
 		EndTime:          endTime,
 		ClusterInstances: derefSlice(body.ClusterInstance),
@@ -59,15 +59,15 @@ func (h *LogsHandler) QueryClusterLogs(
 		params.LogLevels = levels
 	}
 
-	query := h.queryBuilder.BuildClusterLogsQuery(params)
+	query := h.queryBuilder.BuildPlatformLogsQuery(params)
 
 	indices, err := h.queryBuilder.GenerateIndices(startTime, endTime)
 	if err != nil {
 		h.logger.Error("Failed to generate indices",
-			slog.String("function", "QueryClusterLogs"),
+			slog.String("function", "QueryPlatformLogs"),
 			slog.Any("error", err),
 		)
-		return gen.QueryClusterLogs500JSONResponse{
+		return gen.QueryPlatformLogs500JSONResponse{
 			Title:   ptr(gen.InternalServerError),
 			Message: ptr("internal server error"),
 		}, nil
@@ -75,20 +75,20 @@ func (h *LogsHandler) QueryClusterLogs(
 
 	result, err := h.osClient.Search(ctx, indices, query)
 	if err != nil {
-		h.logger.Error("Failed to query cluster logs",
-			slog.String("function", "QueryClusterLogs"),
+		h.logger.Error("Failed to query platform logs",
+			slog.String("function", "QueryPlatformLogs"),
 			slog.Any("error", err),
 		)
-		return gen.QueryClusterLogs500JSONResponse{
+		return gen.QueryPlatformLogs500JSONResponse{
 			Title:   ptr(gen.InternalServerError),
 			Message: ptr("internal server error"),
 		}, nil
 	}
 
-	logs := make([]gen.ClusterLog, 0, len(result.Hits.Hits))
+	logs := make([]gen.PlatformLog, 0, len(result.Hits.Hits))
 	for _, hit := range result.Hits.Hits {
-		entry := opensearch.ParseClusterLogEntry(hit)
-		log := gen.ClusterLog{
+		entry := opensearch.ParsePlatformLogEntry(hit)
+		log := gen.PlatformLog{
 			Timestamp:       ptr(entry.Timestamp),
 			Log:             ptr(entry.Log),
 			Level:           optional(entry.LogLevel),
@@ -107,7 +107,7 @@ func (h *LogsHandler) QueryClusterLogs(
 		logs = append(logs, log)
 	}
 
-	return gen.QueryClusterLogs200JSONResponse{
+	return gen.QueryPlatformLogs200JSONResponse{
 		Logs:   logs,
 		Total:  result.Hits.Total.Value,
 		TookMs: result.Took,

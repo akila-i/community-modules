@@ -120,10 +120,10 @@ type ClientInterface interface {
 
 	HandleAlertWebhook(ctx context.Context, body HandleAlertWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// QueryClusterLogsWithBody request with any body
-	QueryClusterLogsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// QueryPlatformLogsWithBody request with any body
+	QueryPlatformLogsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	QueryClusterLogs(ctx context.Context, body QueryClusterLogsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	QueryPlatformLogs(ctx context.Context, body QueryPlatformLogsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// Health request
 	Health(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -273,8 +273,8 @@ func (c *Client) HandleAlertWebhook(ctx context.Context, body HandleAlertWebhook
 	return c.Client.Do(req)
 }
 
-func (c *Client) QueryClusterLogsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewQueryClusterLogsRequestWithBody(c.Server, contentType, body)
+func (c *Client) QueryPlatformLogsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryPlatformLogsRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -285,8 +285,8 @@ func (c *Client) QueryClusterLogsWithBody(ctx context.Context, contentType strin
 	return c.Client.Do(req)
 }
 
-func (c *Client) QueryClusterLogs(ctx context.Context, body QueryClusterLogsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewQueryClusterLogsRequest(c.Server, body)
+func (c *Client) QueryPlatformLogs(ctx context.Context, body QueryPlatformLogsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryPlatformLogsRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -584,19 +584,19 @@ func NewHandleAlertWebhookRequestWithBody(server string, contentType string, bod
 	return req, nil
 }
 
-// NewQueryClusterLogsRequest calls the generic QueryClusterLogs builder with application/json body
-func NewQueryClusterLogsRequest(server string, body QueryClusterLogsJSONRequestBody) (*http.Request, error) {
+// NewQueryPlatformLogsRequest calls the generic QueryPlatformLogs builder with application/json body
+func NewQueryPlatformLogsRequest(server string, body QueryPlatformLogsJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewQueryClusterLogsRequestWithBody(server, "application/json", bodyReader)
+	return NewQueryPlatformLogsRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewQueryClusterLogsRequestWithBody generates requests for QueryClusterLogs with any type of body
-func NewQueryClusterLogsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewQueryPlatformLogsRequestWithBody generates requests for QueryPlatformLogs with any type of body
+func NewQueryPlatformLogsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -604,7 +604,7 @@ func NewQueryClusterLogsRequestWithBody(server string, contentType string, body 
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1alpha1/cluster-logs/query")
+	operationPath := fmt.Sprintf("/api/v1alpha1/platform-logs/query")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -725,10 +725,10 @@ type ClientWithResponsesInterface interface {
 
 	HandleAlertWebhookWithResponse(ctx context.Context, body HandleAlertWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*HandleAlertWebhookResponse, error)
 
-	// QueryClusterLogsWithBodyWithResponse request with any body
-	QueryClusterLogsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryClusterLogsResponse, error)
+	// QueryPlatformLogsWithBodyWithResponse request with any body
+	QueryPlatformLogsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryPlatformLogsResponse, error)
 
-	QueryClusterLogsWithResponse(ctx context.Context, body QueryClusterLogsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryClusterLogsResponse, error)
+	QueryPlatformLogsWithResponse(ctx context.Context, body QueryPlatformLogsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryPlatformLogsResponse, error)
 
 	// HealthWithResponse request
 	HealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthResponse, error)
@@ -911,10 +911,10 @@ func (r HandleAlertWebhookResponse) StatusCode() int {
 	return 0
 }
 
-type QueryClusterLogsResponse struct {
+type QueryPlatformLogsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *ClusterLogsResponse
+	JSON200      *PlatformLogsResponse
 	JSON400      *ErrorResponse
 	JSON401      *ErrorResponse
 	JSON403      *ErrorResponse
@@ -923,7 +923,7 @@ type QueryClusterLogsResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r QueryClusterLogsResponse) Status() string {
+func (r QueryPlatformLogsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -931,7 +931,7 @@ func (r QueryClusterLogsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r QueryClusterLogsResponse) StatusCode() int {
+func (r QueryPlatformLogsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1069,21 +1069,21 @@ func (c *ClientWithResponses) HandleAlertWebhookWithResponse(ctx context.Context
 	return ParseHandleAlertWebhookResponse(rsp)
 }
 
-// QueryClusterLogsWithBodyWithResponse request with arbitrary body returning *QueryClusterLogsResponse
-func (c *ClientWithResponses) QueryClusterLogsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryClusterLogsResponse, error) {
-	rsp, err := c.QueryClusterLogsWithBody(ctx, contentType, body, reqEditors...)
+// QueryPlatformLogsWithBodyWithResponse request with arbitrary body returning *QueryPlatformLogsResponse
+func (c *ClientWithResponses) QueryPlatformLogsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryPlatformLogsResponse, error) {
+	rsp, err := c.QueryPlatformLogsWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseQueryClusterLogsResponse(rsp)
+	return ParseQueryPlatformLogsResponse(rsp)
 }
 
-func (c *ClientWithResponses) QueryClusterLogsWithResponse(ctx context.Context, body QueryClusterLogsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryClusterLogsResponse, error) {
-	rsp, err := c.QueryClusterLogs(ctx, body, reqEditors...)
+func (c *ClientWithResponses) QueryPlatformLogsWithResponse(ctx context.Context, body QueryPlatformLogsJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryPlatformLogsResponse, error) {
+	rsp, err := c.QueryPlatformLogs(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseQueryClusterLogsResponse(rsp)
+	return ParseQueryPlatformLogsResponse(rsp)
 }
 
 // HealthWithResponse request returning *HealthResponse
@@ -1438,22 +1438,22 @@ func ParseHandleAlertWebhookResponse(rsp *http.Response) (*HandleAlertWebhookRes
 	return response, nil
 }
 
-// ParseQueryClusterLogsResponse parses an HTTP response from a QueryClusterLogsWithResponse call
-func ParseQueryClusterLogsResponse(rsp *http.Response) (*QueryClusterLogsResponse, error) {
+// ParseQueryPlatformLogsResponse parses an HTTP response from a QueryPlatformLogsWithResponse call
+func ParseQueryPlatformLogsResponse(rsp *http.Response) (*QueryPlatformLogsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &QueryClusterLogsResponse{
+	response := &QueryPlatformLogsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ClusterLogsResponse
+		var dest PlatformLogsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
