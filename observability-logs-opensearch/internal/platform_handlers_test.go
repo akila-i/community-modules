@@ -18,13 +18,13 @@ import (
 )
 
 var (
-	clusterStart = time.Date(2026, 8, 14, 16, 30, 0, 0, time.UTC)
-	clusterEnd   = time.Date(2026, 8, 14, 17, 30, 0, 0, time.UTC)
+	platformStart = time.Date(2026, 8, 14, 16, 30, 0, 0, time.UTC)
+	platformEnd   = time.Date(2026, 8, 14, 17, 30, 0, 0, time.UTC)
 )
 
-// clusterSearchServer stands in for OpenSearch, returning the given hits and recording
+// platformSearchServer stands in for OpenSearch, returning the given hits and recording
 // the query body it was sent.
-func clusterSearchServer(t *testing.T, captured *map[string]interface{}, hits []map[string]interface{}) *httptest.Server {
+func platformSearchServer(t *testing.T, captured *map[string]interface{}, hits []map[string]interface{}) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if captured != nil {
@@ -51,7 +51,7 @@ func clusterSearchServer(t *testing.T, captured *map[string]interface{}, hits []
 	}))
 }
 
-func clusterHandler(t *testing.T, serverURL string) *LogsHandler {
+func platformHandler(t *testing.T, serverURL string) *LogsHandler {
 	t.Helper()
 	return NewLogsHandler(
 		newTestOSClient(t, serverURL),
@@ -60,20 +60,20 @@ func clusterHandler(t *testing.T, serverURL string) *LogsHandler {
 	)
 }
 
-func TestQueryClusterLogs_NilBody(t *testing.T) {
+func TestQueryPlatformLogs_NilBody(t *testing.T) {
 	handler := NewLogsHandler(nil, nil, nil, nil, testLogger())
 
-	resp, err := handler.QueryClusterLogs(context.Background(), gen.QueryClusterLogsRequestObject{Body: nil})
+	resp, err := handler.QueryPlatformLogs(context.Background(), gen.QueryPlatformLogsRequestObject{Body: nil})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := resp.(gen.QueryClusterLogs400JSONResponse); !ok {
+	if _, ok := resp.(gen.QueryPlatformLogs400JSONResponse); !ok {
 		t.Fatalf("expected 400 response, got %T", resp)
 	}
 }
 
-func TestQueryClusterLogs_Success(t *testing.T) {
-	server := clusterSearchServer(t, nil, []map[string]interface{}{
+func TestQueryPlatformLogs_Success(t *testing.T) {
+	server := platformSearchServer(t, nil, []map[string]interface{}{
 		{
 			"_id":    "hit-1",
 			"_score": 1.0,
@@ -97,18 +97,18 @@ func TestQueryClusterLogs_Success(t *testing.T) {
 	})
 	defer server.Close()
 
-	resp, err := clusterHandler(t, server.URL).QueryClusterLogs(
+	resp, err := platformHandler(t, server.URL).QueryPlatformLogs(
 		context.Background(),
-		gen.QueryClusterLogsRequestObject{Body: &gen.ClusterLogsQueryRequest{
-			StartTime: clusterStart,
-			EndTime:   clusterEnd,
+		gen.QueryPlatformLogsRequestObject{Body: &gen.PlatformLogsQueryRequest{
+			StartTime: platformStart,
+			EndTime:   platformEnd,
 		}},
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	queryResp, ok := resp.(gen.QueryClusterLogs200JSONResponse)
+	queryResp, ok := resp.(gen.QueryPlatformLogs200JSONResponse)
 	if !ok {
 		t.Fatalf("expected 200 response, got %T", resp)
 	}
@@ -152,21 +152,21 @@ func TestQueryClusterLogs_Success(t *testing.T) {
 	}
 }
 
-// TestQueryClusterLogs_FiltersReachOpenSearch checks the whole mapping in one go: every
+// TestQueryPlatformLogs_FiltersReachOpenSearch checks the whole mapping in one go: every
 // filter on the request has to arrive in the query body, and label keys have to be
 // rewritten to the form Fluent Bit stores them in.
-func TestQueryClusterLogs_FiltersReachOpenSearch(t *testing.T) {
+func TestQueryPlatformLogs_FiltersReachOpenSearch(t *testing.T) {
 	var captured map[string]interface{}
-	server := clusterSearchServer(t, &captured, nil)
+	server := platformSearchServer(t, &captured, nil)
 	defer server.Close()
 
-	levels := []gen.ClusterLogsQueryRequestLogLevels{"ERROR"}
-	sortOrder := gen.ClusterLogsQueryRequestSortOrder("asc")
+	levels := []gen.PlatformLogsQueryRequestLogLevels{"ERROR"}
+	sortOrder := gen.PlatformLogsQueryRequestSortOrder("asc")
 	limit := 25
 	phrase := "reconcile"
-	body := gen.ClusterLogsQueryRequest{
-		StartTime:       clusterStart,
-		EndTime:         clusterEnd,
+	body := gen.PlatformLogsQueryRequest{
+		StartTime:       platformStart,
+		EndTime:         platformEnd,
 		ClusterInstance: &[]string{"cluster1"},
 		Namespace:       &[]string{"openchoreo-control-plane"},
 		PodName:         &[]string{"controller-manager-abc"},
@@ -178,8 +178,8 @@ func TestQueryClusterLogs_FiltersReachOpenSearch(t *testing.T) {
 		SortOrder:       &sortOrder,
 	}
 
-	if _, err := clusterHandler(t, server.URL).QueryClusterLogs(
-		context.Background(), gen.QueryClusterLogsRequestObject{Body: &body},
+	if _, err := platformHandler(t, server.URL).QueryPlatformLogs(
+		context.Background(), gen.QueryPlatformLogsRequestObject{Body: &body},
 	); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,32 +208,32 @@ func TestQueryClusterLogs_FiltersReachOpenSearch(t *testing.T) {
 	}
 }
 
-func TestQueryClusterLogs_SearchFailure(t *testing.T) {
+func TestQueryPlatformLogs_SearchFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
-	resp, err := clusterHandler(t, server.URL).QueryClusterLogs(
+	resp, err := platformHandler(t, server.URL).QueryPlatformLogs(
 		context.Background(),
-		gen.QueryClusterLogsRequestObject{Body: &gen.ClusterLogsQueryRequest{
-			StartTime: clusterStart,
-			EndTime:   clusterEnd,
+		gen.QueryPlatformLogsRequestObject{Body: &gen.PlatformLogsQueryRequest{
+			StartTime: platformStart,
+			EndTime:   platformEnd,
 		}},
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := resp.(gen.QueryClusterLogs500JSONResponse); !ok {
+	if _, ok := resp.(gen.QueryPlatformLogs500JSONResponse); !ok {
 		t.Fatalf("expected 500 response, got %T", resp)
 	}
 }
 
-// TestQueryClusterLogs_UnknownFieldsOmitted pins that a record with no cluster stamp -
+// TestQueryPlatformLogs_UnknownFieldsOmitted pins that a record with no cluster stamp -
 // anything collected before the collector change - serialises without the field rather
 // than with an empty string.
-func TestQueryClusterLogs_UnknownFieldsOmitted(t *testing.T) {
-	server := clusterSearchServer(t, nil, []map[string]interface{}{
+func TestQueryPlatformLogs_UnknownFieldsOmitted(t *testing.T) {
+	server := platformSearchServer(t, nil, []map[string]interface{}{
 		{
 			"_id":     "hit-1",
 			"_score":  1.0,
@@ -242,18 +242,18 @@ func TestQueryClusterLogs_UnknownFieldsOmitted(t *testing.T) {
 	})
 	defer server.Close()
 
-	resp, err := clusterHandler(t, server.URL).QueryClusterLogs(
+	resp, err := platformHandler(t, server.URL).QueryPlatformLogs(
 		context.Background(),
-		gen.QueryClusterLogsRequestObject{Body: &gen.ClusterLogsQueryRequest{
-			StartTime: clusterStart,
-			EndTime:   clusterEnd,
+		gen.QueryPlatformLogsRequestObject{Body: &gen.PlatformLogsQueryRequest{
+			StartTime: platformStart,
+			EndTime:   platformEnd,
 		}},
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	entry := resp.(gen.QueryClusterLogs200JSONResponse).Logs[0]
+	entry := resp.(gen.QueryPlatformLogs200JSONResponse).Logs[0]
 	if entry.ClusterInstance != nil {
 		t.Errorf("clusterInstance = %v, want nil", *entry.ClusterInstance)
 	}

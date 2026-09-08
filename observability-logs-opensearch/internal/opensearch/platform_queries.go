@@ -14,10 +14,10 @@ import (
 // each backend's own field-name normalisation unchanged.
 const ClusterInstanceField = "openchoreo_cluster_instance"
 
-// ClusterLogsQueryParams holds parameters for a cluster log query.
+// PlatformLogsQueryParams holds parameters for a platform log query.
 // Every filter is optional except the time range. Multi-value fields OR within
 // themselves and AND with each other, and an empty field is not a filter.
-type ClusterLogsQueryParams struct {
+type PlatformLogsQueryParams struct {
 	ClusterInstances []string
 	Namespaces       []string
 	PodNames         []string
@@ -31,9 +31,9 @@ type ClusterLogsQueryParams struct {
 	SortOrder        string
 }
 
-// BuildClusterLogsQuery builds a query over raw Kubernetes coordinates, with no
+// BuildPlatformLogsQuery builds a query over raw Kubernetes coordinates, with no
 // project/component/environment correlation.
-func (qb *QueryBuilder) BuildClusterLogsQuery(params ClusterLogsQueryParams) map[string]interface{} {
+func (qb *QueryBuilder) BuildPlatformLogsQuery(params PlatformLogsQueryParams) map[string]interface{} {
 	mustConditions := []map[string]interface{}{}
 	mustConditions = addTimeRangeFilter(mustConditions, params.StartTime, params.EndTime)
 	mustConditions = addTermsFilter(mustConditions, ClusterInstanceField, params.ClusterInstances)
@@ -123,9 +123,9 @@ func addLabelFilters(
 	return mustConditions
 }
 
-// ClusterLogEntry is a parsed cluster log entry: the message plus the physical
+// PlatformLogEntry is a parsed platform log entry: the message plus the physical
 // coordinates and pod metadata of whatever produced it.
-type ClusterLogEntry struct {
+type PlatformLogEntry struct {
 	Timestamp       time.Time         `json:"timestamp"`
 	Log             string            `json:"log"`
 	LogLevel        string            `json:"logLevel"`
@@ -139,10 +139,10 @@ type ClusterLogEntry struct {
 	Labels          map[string]string `json:"labels"`
 }
 
-// ParseClusterLogEntry converts a search hit to a ClusterLogEntry.
-func ParseClusterLogEntry(hit Hit) ClusterLogEntry {
+// ParsePlatformLogEntry converts a search hit to a PlatformLogEntry.
+func ParsePlatformLogEntry(hit Hit) PlatformLogEntry {
 	source := hit.Source
-	entry := ClusterLogEntry{
+	entry := PlatformLogEntry{
 		ClusterInstance: getStringValue(source, ClusterInstanceField),
 	}
 

@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// clusterMustConditions pulls the bool/must array out of a built query.
-func clusterMustConditions(t *testing.T, query map[string]interface{}) []map[string]interface{} {
+// platformMustConditions pulls the bool/must array out of a built query.
+func platformMustConditions(t *testing.T, query map[string]interface{}) []map[string]interface{} {
 	t.Helper()
 	boolQuery, ok := query["query"].(map[string]interface{})["bool"].(map[string]interface{})
 	if !ok {
@@ -38,10 +38,10 @@ func findClause(conds []map[string]interface{}, clauseType, field string) interf
 	return nil
 }
 
-func TestBuildClusterLogsQuery_AllFilters(t *testing.T) {
+func TestBuildPlatformLogsQuery_AllFilters(t *testing.T) {
 	qb := NewQueryBuilder("container-logs-")
 
-	query := qb.BuildClusterLogsQuery(ClusterLogsQueryParams{
+	query := qb.BuildPlatformLogsQuery(PlatformLogsQueryParams{
 		StartTime:        "2026-08-14T16:30:00Z",
 		EndTime:          "2026-08-14T17:30:00Z",
 		ClusterInstances: []string{"cluster1", "cluster2"},
@@ -63,7 +63,7 @@ func TestBuildClusterLogsQuery_AllFilters(t *testing.T) {
 		t.Errorf("sort order = %v, want asc", sortOrder)
 	}
 
-	conds := clusterMustConditions(t, query)
+	conds := platformMustConditions(t, query)
 
 	for _, tc := range []struct {
 		field string
@@ -85,13 +85,13 @@ func TestBuildClusterLogsQuery_AllFilters(t *testing.T) {
 	}
 }
 
-// TestBuildClusterLogsQuery_LabelKeysAreDotReplaced pins the mapping between how
+// TestBuildPlatformLogsQuery_LabelKeysAreDotReplaced pins the mapping between how
 // Kubernetes spells a label and how Fluent Bit stores it. The OpenSearch output runs with
 // Replace_Dots On, so a query built with the Kubernetes spelling would match nothing.
-func TestBuildClusterLogsQuery_LabelKeysAreDotReplaced(t *testing.T) {
+func TestBuildPlatformLogsQuery_LabelKeysAreDotReplaced(t *testing.T) {
 	qb := NewQueryBuilder("container-logs-")
 
-	query := qb.BuildClusterLogsQuery(ClusterLogsQueryParams{
+	query := qb.BuildPlatformLogsQuery(PlatformLogsQueryParams{
 		StartTime: "2026-08-14T16:30:00Z",
 		EndTime:   "2026-08-14T17:30:00Z",
 		Labels: map[string]string{
@@ -101,7 +101,7 @@ func TestBuildClusterLogsQuery_LabelKeysAreDotReplaced(t *testing.T) {
 		},
 	})
 
-	conds := clusterMustConditions(t, query)
+	conds := platformMustConditions(t, query)
 	for field, want := range map[string]string{
 		"kubernetes.labels.openchoreo_dev/plane":    "dataplane",
 		"kubernetes.labels.openchoreo_dev/plane-id": "prod",
@@ -113,23 +113,23 @@ func TestBuildClusterLogsQuery_LabelKeysAreDotReplaced(t *testing.T) {
 	}
 }
 
-// TestBuildClusterLogsQuery_LabelOrderIsDeterministic keeps the built query comparable:
+// TestBuildPlatformLogsQuery_LabelOrderIsDeterministic keeps the built query comparable:
 // Go map iteration order is randomised, so without sorting the same filters would produce
 // different queries run to run.
-func TestBuildClusterLogsQuery_LabelOrderIsDeterministic(t *testing.T) {
+func TestBuildPlatformLogsQuery_LabelOrderIsDeterministic(t *testing.T) {
 	qb := NewQueryBuilder("container-logs-")
-	params := ClusterLogsQueryParams{
+	params := PlatformLogsQueryParams{
 		StartTime: "2026-08-14T16:30:00Z",
 		EndTime:   "2026-08-14T17:30:00Z",
 		Labels:    map[string]string{"c": "3", "a": "1", "b": "2"},
 	}
 
-	first, err := json.Marshal(qb.BuildClusterLogsQuery(params))
+	first, err := json.Marshal(qb.BuildPlatformLogsQuery(params))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	for i := 0; i < 20; i++ {
-		next, err := json.Marshal(qb.BuildClusterLogsQuery(params))
+		next, err := json.Marshal(qb.BuildPlatformLogsQuery(params))
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
@@ -139,12 +139,12 @@ func TestBuildClusterLogsQuery_LabelOrderIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestBuildClusterLogsQuery_EmptyFiltersAreNotFilters guards the difference between "no
+// TestBuildPlatformLogsQuery_EmptyFiltersAreNotFilters guards the difference between "no
 // filter" and "match nothing": an absent filter must not narrow the query at all.
-func TestBuildClusterLogsQuery_EmptyFiltersAreNotFilters(t *testing.T) {
+func TestBuildPlatformLogsQuery_EmptyFiltersAreNotFilters(t *testing.T) {
 	qb := NewQueryBuilder("container-logs-")
 
-	query := qb.BuildClusterLogsQuery(ClusterLogsQueryParams{
+	query := qb.BuildPlatformLogsQuery(PlatformLogsQueryParams{
 		StartTime:        "2026-08-14T16:30:00Z",
 		EndTime:          "2026-08-14T17:30:00Z",
 		ClusterInstances: []string{},
@@ -152,7 +152,7 @@ func TestBuildClusterLogsQuery_EmptyFiltersAreNotFilters(t *testing.T) {
 		Labels:           map[string]string{},
 	})
 
-	conds := clusterMustConditions(t, query)
+	conds := platformMustConditions(t, query)
 	if len(conds) != 1 {
 		t.Fatalf("expected only the time range clause, got %d: %v", len(conds), conds)
 	}
@@ -161,10 +161,10 @@ func TestBuildClusterLogsQuery_EmptyFiltersAreNotFilters(t *testing.T) {
 	}
 }
 
-func TestBuildClusterLogsQuery_Defaults(t *testing.T) {
+func TestBuildPlatformLogsQuery_Defaults(t *testing.T) {
 	qb := NewQueryBuilder("container-logs-")
 
-	query := qb.BuildClusterLogsQuery(ClusterLogsQueryParams{
+	query := qb.BuildPlatformLogsQuery(PlatformLogsQueryParams{
 		StartTime: "2026-08-14T16:30:00Z",
 		EndTime:   "2026-08-14T17:30:00Z",
 	})
@@ -178,7 +178,7 @@ func TestBuildClusterLogsQuery_Defaults(t *testing.T) {
 	}
 }
 
-func TestParseClusterLogEntry(t *testing.T) {
+func TestParsePlatformLogEntry(t *testing.T) {
 	hit := Hit{Source: map[string]interface{}{
 		"@timestamp":                  "2026-08-14T16:31:00Z",
 		"log":                         "2026-08-14T16:31:00Z\tERROR\treconcile failed",
@@ -197,9 +197,9 @@ func TestParseClusterLogEntry(t *testing.T) {
 		},
 	}}
 
-	entry := ParseClusterLogEntry(hit)
+	entry := ParsePlatformLogEntry(hit)
 
-	want := ClusterLogEntry{
+	want := PlatformLogEntry{
 		Timestamp:       time.Date(2026, 8, 14, 16, 31, 0, 0, time.UTC),
 		Log:             "2026-08-14T16:31:00Z\tERROR\treconcile failed",
 		LogLevel:        "ERROR",
@@ -225,11 +225,11 @@ func TestParseClusterLogEntry(t *testing.T) {
 	}
 }
 
-// TestParseClusterLogEntry_MissingFields pins that a record without kubernetes metadata
+// TestParsePlatformLogEntry_MissingFields pins that a record without kubernetes metadata
 // or a cluster stamp still parses - records predating the collector change have no
 // openchoreo_cluster_instance and must not break the response.
-func TestParseClusterLogEntry_MissingFields(t *testing.T) {
-	entry := ParseClusterLogEntry(Hit{Source: map[string]interface{}{
+func TestParsePlatformLogEntry_MissingFields(t *testing.T) {
+	entry := ParsePlatformLogEntry(Hit{Source: map[string]interface{}{
 		"@timestamp": "2026-08-14T16:31:00Z",
 		"log":        "no metadata here",
 	}})
@@ -264,8 +264,8 @@ func TestRestoreLabelKey(t *testing.T) {
 	}
 }
 
-func TestParseClusterLogEntry_NoLabels(t *testing.T) {
-	entry := ParseClusterLogEntry(Hit{Source: map[string]interface{}{
+func TestParsePlatformLogEntry_NoLabels(t *testing.T) {
+	entry := ParsePlatformLogEntry(Hit{Source: map[string]interface{}{
 		"@timestamp": "2026-08-14T16:31:00Z",
 		"log":        "no metadata",
 		"kubernetes": map[string]interface{}{"pod_name": "p"},
