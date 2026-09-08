@@ -93,6 +93,14 @@ func addTermsFilter(
 //
 // Keys are sorted so the query is deterministic, which keeps it comparable in tests and
 // stable in logs.
+//
+// Replace_Dots is lossy in the name part of a key, so a filter can be ambiguous:
+// "example.io/release.id" and "example.io/release_id" are both stored at
+// kubernetes.labels.example_io/release_id, and a filter on either matches records carrying
+// the other. Nothing here can undo that - the collision is created at ingest, and the
+// adapter only mirrors the transform so the term targets the field Fluent Bit wrote.
+// Resolving it means storing labels losslessly (key/value pairs rather than object
+// fields), which is an ingest and index-mapping change, not an adapter one.
 func addLabelFilters(
 	mustConditions []map[string]interface{}, labels map[string]string,
 ) []map[string]interface{} {
@@ -177,9 +185,15 @@ func ParseClusterLogEntry(hit Hit) ClusterLogEntry {
 // labels "version_id" and "build-name" among them) and is left alone. Reversing the
 // whole key would corrupt those.
 //
-// A prefix-less key that genuinely contained dots is not recoverable, since it is
-// indistinguishable from one that contained underscores. Those are vanishingly rare and
-// the alternative corrupts common keys, so it is left as stored.
+// Dots in the name part are not recoverable either, and for the same reason: a stored
+// "example_io/release_id" may have been "example.io/release.id" or "example.io/release_id",
+// and the two are indistinguishable once written. Restoring the name part would corrupt the
+// common case ("version_id", "build-name") to fix the rare one, so it is left as stored and
+// such a key is reported with an underscore where a dot was.
+//
+// The same ambiguity makes a label filter on either spelling match records carrying the
+// other. Both are consequences of Replace_Dots at ingest; the fix is to store labels
+// losslessly rather than to post-process here.
 func RestoreLabelKey(key string) string {
 	slash := strings.Index(key, "/")
 	if slash < 0 {
