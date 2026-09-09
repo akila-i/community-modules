@@ -6,6 +6,7 @@ package opensearch
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -197,7 +198,10 @@ func TestParsePlatformLogEntry(t *testing.T) {
 		},
 	}}
 
-	entry := ParsePlatformLogEntry(hit)
+	entry, err := ParsePlatformLogEntry(hit)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	want := PlatformLogEntry{
 		Timestamp:       time.Date(2026, 8, 14, 16, 31, 0, 0, time.UTC),
@@ -229,10 +233,13 @@ func TestParsePlatformLogEntry(t *testing.T) {
 // or a cluster stamp still parses - records predating the collector change have no
 // openchoreo_cluster_instance and must not break the response.
 func TestParsePlatformLogEntry_MissingFields(t *testing.T) {
-	entry := ParsePlatformLogEntry(Hit{Source: map[string]interface{}{
+	entry, err := ParsePlatformLogEntry(Hit{Source: map[string]interface{}{
 		"@timestamp": "2026-08-14T16:31:00Z",
 		"log":        "no metadata here",
 	}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if entry.ClusterInstance != "" || entry.NamespaceName != "" || entry.PodName != "" {
 		t.Errorf("expected empty coordinates, got %+v", entry)
@@ -265,13 +272,77 @@ func TestRestoreLabelKey(t *testing.T) {
 }
 
 func TestParsePlatformLogEntry_NoLabels(t *testing.T) {
-	entry := ParsePlatformLogEntry(Hit{Source: map[string]interface{}{
+	entry, err := ParsePlatformLogEntry(Hit{Source: map[string]interface{}{
 		"@timestamp": "2026-08-14T16:31:00Z",
 		"log":        "no metadata",
 		"kubernetes": map[string]interface{}{"pod_name": "p"},
 	}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if entry.Labels != nil {
 		t.Errorf("expected nil labels, got %v", entry.Labels)
+	}
+}
+
+// TestParsePlatformLogEntry_RejectsMalformed pins the two fields the contract
+// requires. A blank log line is real container output and must parse; an absent or
+// non-string field is a malformed document and must not become an entry.
+func TestParsePlatformLogEntry_RejectsMalformed(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		source  map[string]interface{}
+		wantErr string
+	}{
+		{
+			name:    "timestamp absent",
+			source:  map[string]interface{}{"log": "x"},
+			wantErr: "@timestamp is absent or not a string",
+		},
+		{
+			name:    "timestamp not a string",
+			source:  map[string]interface{}{"log": "x", "@timestamp": 1755188000},
+			wantErr: "@timestamp is absent or not a string",
+		},
+		{
+			name:    "timestamp not RFC3339",
+			source:  map[string]interface{}{"log": "x", "@timestamp": "14/08/2026 16:31"},
+			wantErr: "is not RFC3339",
+		},
+		{
+			name:    "log absent",
+			source:  map[string]interface{}{"@timestamp": "2026-08-14T16:31:00Z"},
+			wantErr: "log is absent or not a string",
+		},
+		{
+			name:    "log not a string",
+			source:  map[string]interface{}{"@timestamp": "2026-08-14T16:31:00Z", "log": 42},
+			wantErr: "log is absent or not a string",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParsePlatformLogEntry(Hit{Source: tc.source})
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error = %q, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// A genuinely blank line is not malformed: it is output the container produced.
+func TestParsePlatformLogEntry_BlankLineIsValid(t *testing.T) {
+	entry, err := ParsePlatformLogEntry(Hit{Source: map[string]interface{}{
+		"@timestamp": "2026-08-14T16:31:00Z",
+		"log":        "",
+	}})
+	if err != nil {
+		t.Fatalf("a blank log line must parse, got %v", err)
+	}
+	if entry.Log != "" {
+		t.Errorf("log = %q, want empty", entry.Log)
 	}
 }

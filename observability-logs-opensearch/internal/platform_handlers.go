@@ -87,16 +87,15 @@ func (h *LogsHandler) QueryPlatformLogs(
 
 	logs := make([]gen.PlatformLog, 0, len(result.Hits.Hits))
 	for _, hit := range result.Hits.Hits {
-		entry := opensearch.ParsePlatformLogEntry(hit)
-
-		// timestamp is required by the contract, and this module owns that guarantee.
-		// The query range-filters on @timestamp, so a returned document has one - a
-		// zero value here means it was absent, not a string, or not RFC3339, i.e. the
-		// document is malformed. Emitting it would put 0001-01-01T00:00:00Z on the
-		// wire as though it were a real reading, so skip it and say which document.
-		if entry.Timestamp.IsZero() {
-			h.logger.Warn("skipping log document with no parseable @timestamp",
-				"docId", hit.ID)
+		// timestamp and log are required by the contract, and this module owns those
+		// guarantees. A document reaching here should satisfy both - the query
+		// range-filters on @timestamp, and the index holds container logs - so a parse
+		// failure means the document is malformed. Emitting it would put
+		// 0001-01-01T00:00:00Z on the wire as a real reading, or a blank line that was
+		// never logged, so skip it and say which document and why.
+		entry, err := opensearch.ParsePlatformLogEntry(hit)
+		if err != nil {
+			h.logger.Warn("skipping malformed log document", "docId", hit.ID, "error", err)
 			continue
 		}
 

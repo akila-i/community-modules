@@ -4,6 +4,7 @@
 package opensearch
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -140,20 +141,34 @@ type PlatformLogEntry struct {
 }
 
 // ParsePlatformLogEntry converts a search hit to a PlatformLogEntry.
-func ParsePlatformLogEntry(hit Hit) PlatformLogEntry {
+//
+// It errors when the document cannot yield a valid entry. timestamp and log are
+// required by the contract this module serves, and only here is the source visible:
+// once parsed, an empty Log is ambiguous, since a genuinely blank line and a missing
+// or non-string field both read as "". A blank line is real container output and is
+// returned normally; an absent or non-string field is a malformed document.
+func ParsePlatformLogEntry(hit Hit) (PlatformLogEntry, error) {
 	source := hit.Source
-	entry := PlatformLogEntry{
-		ClusterInstance: getStringValue(source, ClusterInstanceField),
+
+	ts, ok := source["@timestamp"].(string)
+	if !ok {
+		return PlatformLogEntry{}, fmt.Errorf("@timestamp is absent or not a string")
+	}
+	timestamp, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return PlatformLogEntry{}, fmt.Errorf("@timestamp %q is not RFC3339: %w", ts, err)
 	}
 
-	if ts, ok := source["@timestamp"].(string); ok {
-		if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
-			entry.Timestamp = parsed
-		}
+	log, ok := source["log"].(string)
+	if !ok {
+		return PlatformLogEntry{}, fmt.Errorf("log is absent or not a string")
 	}
-	if log, ok := source["log"].(string); ok {
-		entry.Log = log
-		entry.LogLevel = extractLogLevel(log)
+
+	entry := PlatformLogEntry{
+		Timestamp:       timestamp,
+		Log:             log,
+		LogLevel:        extractLogLevel(log),
+		ClusterInstance: getStringValue(source, ClusterInstanceField),
 	}
 	if k8s, ok := source["kubernetes"].(map[string]interface{}); ok {
 		entry.NamespaceName = getStringValue(k8s, "namespace_name")
@@ -173,7 +188,7 @@ func ParsePlatformLogEntry(hit Hit) PlatformLogEntry {
 			}
 		}
 	}
-	return entry
+	return entry, nil
 }
 
 // RestoreLabelKey undoes Fluent Bit's Replace_Dots on a label key, so a caller sees the
