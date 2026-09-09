@@ -265,24 +265,40 @@ func TestQueryPlatformLogs_UnknownFieldsOmitted(t *testing.T) {
 	}
 }
 
-// TestQueryPlatformLogs_SkipsUnparseableTimestamp pins the contract guarantee this
-// module owns. timestamp is required on PlatformLog, so a document whose
-// @timestamp is absent or not RFC3339 must not be emitted — serving it would put
-// 0001-01-01T00:00:00Z on the wire as though it were a real reading. The query
-// range-filters on @timestamp, so this only happens for a malformed document.
-func TestQueryPlatformLogs_SkipsUnparseableTimestamp(t *testing.T) {
+// TestQueryPlatformLogs_SkipsMalformedDocuments pins the contract guarantees this
+// module owns. timestamp and log are both required on PlatformLog, so a document
+// missing either must not be emitted - serving it would put 0001-01-01T00:00:00Z on
+// the wire, or a blank line that was never logged.
+//
+// A genuinely empty log message is not malformed: blank lines are real container
+// output and must survive, which is why the check is on presence rather than on the
+// value being non-empty.
+func TestQueryPlatformLogs_SkipsMalformedDocuments(t *testing.T) {
 	server := platformSearchServer(t, nil, []map[string]interface{}{
 		{
-			"_id":     "malformed",
-			"_source": map[string]interface{}{"log": "no usable timestamp", "@timestamp": "14/08/2026 16:31"},
+			"_id":     "timestamp-unparseable",
+			"_source": map[string]interface{}{"log": "x", "@timestamp": "14/08/2026 16:31"},
 		},
 		{
-			"_id":     "missing",
-			"_source": map[string]interface{}{"log": "no timestamp field at all"},
+			"_id":     "timestamp-missing",
+			"_source": map[string]interface{}{"log": "x"},
+		},
+		{
+			"_id":     "log-missing",
+			"_source": map[string]interface{}{"@timestamp": "2026-08-14T16:31:00Z"},
+		},
+		{
+			"_id":     "log-not-a-string",
+			"_source": map[string]interface{}{"log": 42, "@timestamp": "2026-08-14T16:31:00Z"},
+		},
+		{
+			// A blank line is real output, not a malformed document.
+			"_id":     "log-genuinely-blank",
+			"_source": map[string]interface{}{"log": "", "@timestamp": "2026-08-14T16:32:00Z"},
 		},
 		{
 			"_id":     "good",
-			"_source": map[string]interface{}{"log": "usable", "@timestamp": "2026-08-14T16:31:00Z"},
+			"_source": map[string]interface{}{"log": "usable", "@timestamp": "2026-08-14T16:33:00Z"},
 		},
 	})
 	defer server.Close()
@@ -302,13 +318,21 @@ func TestQueryPlatformLogs_SkipsUnparseableTimestamp(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected 200 response, got %T", resp)
 	}
-	if len(queryResp.Logs) != 1 {
-		t.Fatalf("expected only the parseable record, got %d", len(queryResp.Logs))
+
+	var got []string
+	for _, l := range queryResp.Logs {
+		got = append(got, l.Log)
+		if l.Timestamp.IsZero() {
+			t.Errorf("served a record with no timestamp: %q", l.Log)
+		}
 	}
-	if queryResp.Logs[0].Log != "usable" {
-		t.Errorf("log = %q, want %q", queryResp.Logs[0].Log, "usable")
+	want := []string{"", "usable"}
+	if len(got) != len(want) {
+		t.Fatalf("served %d records %q, want %d %q", len(got), got, len(want), want)
 	}
-	if queryResp.Logs[0].Timestamp.IsZero() {
-		t.Error("the surviving record must carry a real timestamp")
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("record %d = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
