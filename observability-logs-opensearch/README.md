@@ -63,7 +63,7 @@ helm upgrade --install observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.6.0 \
+  --version 0.5.3 \
   --set adapter.openSearchSecretName="opensearch-admin-credentials" \
   --set openSearchSetup.openSearchSecretName="opensearch-admin-credentials"
 ```
@@ -75,7 +75,7 @@ helm upgrade --install observability-logs-opensearch \
 >   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
 >   --create-namespace \
 >   --namespace openchoreo-observability-plane \
->   --version 0.6.0 \
+>   --version 0.5.3 \
 >   --set adapter.openSearchSecretName="opensearch-admin-credentials" \
 >   --set openSearch.enabled=false \
 >   --set openSearchSetup.openSearchSecretName="opensearch-admin-credentials"
@@ -110,7 +110,7 @@ helm upgrade observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.6.0 \
+  --version 0.5.3 \
   --reuse-values \
   --set fluent-bit.enabled=true \
   --set fluent-bit.clusterInstance=singleCluster
@@ -133,7 +133,7 @@ helm upgrade --install observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.6.0 \
+  --version 0.5.3 \
   --set adapter.openSearchSecretName="opensearch-admin-credentials" \
   --set openSearch.enabled=false \
   --set openSearchCluster.enabled=true \
@@ -161,7 +161,7 @@ helm upgrade --install observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.6.0 \
+  --version 0.5.3 \
   --set adapter.enabled=false \
   --set openSearch.enabled=false \
   --set openSearchCluster.enabled=false \
@@ -208,7 +208,6 @@ Bundled upstream Helm charts:
 
 | Module Version | OpenChoreo Version |
 | -------------- | ------------------ |
-| v0.6.x         | v1.3.x             |
 | v0.5.x         | v1.2.x             |
 | v0.4.x         | v1.1.x             |
 | v0.3.x         | v1.0.x             |

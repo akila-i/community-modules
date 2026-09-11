@@ -69,6 +69,18 @@ containerLogsIndexTemplate='
     },
     "mappings": {
       "dynamic": "false",
+      "dynamic_templates": [
+        {
+          "pod_labels_as_keywords": {
+            "path_match": "kubernetes.labels.*",
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        }
+      ],
       "properties": {
         "@timestamp": {
           "type": "date"
@@ -86,7 +98,46 @@ containerLogsIndexTemplate='
               "type": "keyword"
             },
             "labels": {
-              "type": "flat_object"
+              "type": "object",
+              "dynamic": true,
+              "properties": {
+                "build-name": {
+                  "type": "keyword"
+                },
+                "openchoreo_dev/component": {
+                  "type": "keyword"
+                },
+                "openchoreo_dev/component-uid": {
+                  "type": "keyword"
+                },
+                "openchoreo_dev/environment": {
+                  "type": "keyword"
+                },
+                "openchoreo_dev/environment-uid": {
+                  "type": "keyword"
+                },
+                "openchoreo_dev/namespace": {
+                  "type": "keyword"
+                },
+                "openchoreo_dev/project": {
+                  "type": "keyword"
+                },
+                "openchoreo_dev/project-uid": {
+                  "type": "keyword"
+                },
+                "target": {
+                  "type": "keyword"
+                },
+                "uuid": {
+                  "type": "keyword"
+                },
+                "version": {
+                  "type": "keyword"
+                },
+                "version_id": {
+                  "type": "keyword"
+                }
+              }
             },
             "namespace_name": {
               "type": "keyword"
