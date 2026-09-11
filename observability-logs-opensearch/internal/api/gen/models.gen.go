@@ -88,6 +88,20 @@ const (
 	LogsQueryRequestSortOrderDesc LogsQueryRequestSortOrder = "desc"
 )
 
+// Defines values for PlatformLogFilterValuesRequestFilter.
+const (
+	ClusterInstance PlatformLogFilterValuesRequestFilter = "clusterInstance"
+	ContainerName   PlatformLogFilterValuesRequestFilter = "containerName"
+	Namespace       PlatformLogFilterValuesRequestFilter = "namespace"
+	PodName         PlatformLogFilterValuesRequestFilter = "podName"
+)
+
+// Defines values for PlatformLogFilterValuesResponseTotalRelation.
+const (
+	Eq  PlatformLogFilterValuesResponseTotalRelation = "eq"
+	Gte PlatformLogFilterValuesResponseTotalRelation = "gte"
+)
+
 // Defines values for PlatformLogsQueryRequestLogLevels.
 const (
 	PlatformLogsQueryRequestLogLevelsDEBUG PlatformLogsQueryRequestLogLevels = "DEBUG"
@@ -461,6 +475,76 @@ type PlatformLog struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// PlatformLogFilterValue One value a filter takes, with how many records carry it.
+type PlatformLogFilterValue struct {
+	// Count Matching records carrying this value. May be approximate on a
+	// high-cardinality filter where the backend answers from a partial term
+	// count, so it is an ordering hint rather than a total.
+	Count int64 `json:"count"`
+
+	// Value The value, exactly as it would be sent back as a filter
+	Value string `json:"value"`
+}
+
+// PlatformLogFilterValuesRequest Which filter to list values for, and the query to list them under.
+//
+// `query` is a full `PlatformLogsQueryRequest`, in the same shape as a record
+// query - so the observer passes the query it already holds rather than
+// rebuilding it. Its `startTime` and `endTime` are required, so every call here
+// is scoped to a period.
+//
+// The other filters in `query` narrow which records the values are drawn from,
+// except the one named by `filter`, whose own selections are ignored.
+//
+// `query.limit` and `query.sortOrder` carry no meaning here: no records are
+// returned, so there is nothing to page or order. They are accepted and ignored
+// rather than rejected.
+type PlatformLogFilterValuesRequest struct {
+	// Filter The filter to list values for, named as the request field that accepts it.
+	Filter PlatformLogFilterValuesRequestFilter `json:"filter"`
+
+	// MaxValues The maximum number of values to return, ordered by `count` descending then
+	// `value` ascending, so a truncated list holds the busiest. Named to stay
+	// distinct from `query.limit`, which is a record page size and is ignored
+	// here.
+	MaxValues *int `json:"maxValues,omitempty"`
+
+	// Query A flat set of Kubernetes coordinates. Multi-value fields OR within a field; fields
+	// AND with each other. An absent field is not a filter.
+	Query PlatformLogsQueryRequest `json:"query"`
+
+	// ValueSearch Return only values containing this text, case-insensitively. Narrows the
+	// *values* returned, where `query.searchPhrase` narrows the *records* they
+	// are drawn from.
+	ValueSearch *string `json:"valueSearch,omitempty"`
+}
+
+// PlatformLogFilterValuesRequestFilter The filter to list values for, named as the request field that accepts it.
+type PlatformLogFilterValuesRequestFilter string
+
+// PlatformLogFilterValuesResponse defines model for PlatformLogFilterValuesResponse.
+type PlatformLogFilterValuesResponse struct {
+	// Filter The filter these values belong to, echoed from the request
+	Filter string `json:"filter"`
+
+	// TookMs The time taken to compute the values in milliseconds
+	TookMs int `json:"tookMs"`
+
+	// TotalRelation Whether `totalValues` is exact (`eq`) or a lower bound (`gte`).
+	TotalRelation PlatformLogFilterValuesResponseTotalRelation `json:"totalRelation"`
+
+	// TotalValues How many distinct values match, of which at most `maxValues` were returned.
+	TotalValues int64 `json:"totalValues"`
+
+	// Values Distinct values, ordered by `count` descending then `value` ascending.
+	// Records on which the field is absent are not represented: no empty-string
+	// entry, because no filter value would select one.
+	Values []PlatformLogFilterValue `json:"values"`
+}
+
+// PlatformLogFilterValuesResponseTotalRelation Whether `totalValues` is exact (`eq`) or a lower bound (`gte`).
+type PlatformLogFilterValuesResponseTotalRelation string
+
 // PlatformLogsQueryRequest A flat set of Kubernetes coordinates. Multi-value fields OR within a field; fields
 // AND with each other. An absent field is not a filter.
 type PlatformLogsQueryRequest struct {
@@ -545,6 +629,9 @@ type UpdateAlertRuleJSONRequestBody = AlertRuleRequest
 
 // HandleAlertWebhookJSONRequestBody defines body for HandleAlertWebhook for application/json ContentType.
 type HandleAlertWebhookJSONRequestBody = HandleAlertWebhookJSONBody
+
+// QueryPlatformLogFilterValuesJSONRequestBody defines body for QueryPlatformLogFilterValues for application/json ContentType.
+type QueryPlatformLogFilterValuesJSONRequestBody = PlatformLogFilterValuesRequest
 
 // QueryPlatformLogsJSONRequestBody defines body for QueryPlatformLogs for application/json ContentType.
 type QueryPlatformLogsJSONRequestBody = PlatformLogsQueryRequest

@@ -22,6 +22,10 @@ type SearchResponse struct {
 	} `json:"hits"`
 	Took     int  `json:"took"`
 	TimedOut bool `json:"timed_out"`
+
+	// Aggregations is carried through raw so each caller can decode the shape it asked
+	// for, rather than this type growing a field per aggregation the module uses.
+	Aggregations json.RawMessage `json:"aggregations,omitempty"`
 }
 
 // Hit represents a single search result hit.
