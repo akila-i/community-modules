@@ -84,17 +84,17 @@ func buildPlatformConditions(params PlatformLogsParams) []string {
 		conditions = append(conditions, "log LIKE '%"+escapeSQLString(params.SearchPhrase)+"%'")
 	}
 
-	// Log level is read out of the message text, not off a column. The collector does not
-	// emit a level field for container logs, so a record's severity is only ever what its
-	// own text says - the same place parseLogLevel reads it from when building a response.
+	// Log level is read out of the message text, not off a column: the collector emits no
+	// level field for container logs, so a record's severity is only ever what its own text
+	// says. The predicate has to agree with extractLogLevel, which decides the level shown
+	// in the response - otherwise a record could be filtered in as INFO and then displayed
+	// as ERROR, or excluded by the filter that matches the level it is labelled with.
 	if len(params.LogLevels) > 0 {
 		levelConditions := make([]string, 0, len(params.LogLevels))
 		for _, level := range params.LogLevels {
-			if level == "" {
-				continue
+			if cond := logLevelCondition(level); cond != "" {
+				levelConditions = append(levelConditions, cond)
 			}
-			levelConditions = append(levelConditions,
-				"lower("+colLog+") LIKE '%"+strings.ToLower(escapeSQLString(level))+"%'")
 		}
 		if len(levelConditions) > 0 {
 			conditions = append(conditions, "("+strings.Join(levelConditions, " OR ")+")")
@@ -238,4 +238,74 @@ func parsePlatformLogEntry(timestamp int64, source map[string]interface{}) Platf
 	}
 
 	return entry
+}
+
+// logLevelMarkers are the substrings extractLogLevel scans for, in the order it scans them,
+// with the level each yields. "warning" is absent because "warn" precedes it and is a
+// prefix of it, so it can never be reached.
+var logLevelMarkers = []struct{ marker, level string }{
+	{"error", "ERROR"},
+	{"fatal", "FATAL"},
+	{"severe", "SEVERE"},
+	{"warn", "WARN"},
+	{"info", "INFO"},
+	{"debug", "DEBUG"},
+}
+
+// defaultLogLevel is what extractLogLevel returns for a message carrying no marker at all.
+const defaultLogLevel = "INFO"
+
+// logLevelCondition matches the records extractLogLevel would classify as the given level.
+//
+// Classification is first-match-wins down logLevelMarkers, so a level is selected by its
+// own marker being present and every higher-precedence marker being absent - a line reading
+// "INFO: retrying after ERROR" is an ERROR, and an INFO filter must not return it. The
+// level a message with no marker falls back to also has to match those messages, or a
+// filter would exclude records the response labels with that very level.
+func logLevelCondition(level string) string {
+	level = strings.ToUpper(strings.TrimSpace(level))
+	if level == "" {
+		return ""
+	}
+
+	var own []string
+	var higher []string
+	for _, m := range logLevelMarkers {
+		if m.level == level {
+			own = append(own, m.marker)
+			continue
+		}
+		if len(own) == 0 {
+			higher = append(higher, m.marker)
+		}
+	}
+
+	var clauses []string
+	if len(own) > 0 {
+		clause := logContains(own[0])
+		for _, h := range higher {
+			clause += " AND NOT " + logContains(h)
+		}
+		clauses = append(clauses, "("+clause+")")
+	}
+
+	// A message with no marker is classified as the default level, so that level's filter
+	// has to select those messages too.
+	if level == defaultLogLevel {
+		absent := make([]string, 0, len(logLevelMarkers))
+		for _, m := range logLevelMarkers {
+			absent = append(absent, "NOT "+logContains(m.marker))
+		}
+		clauses = append(clauses, "("+strings.Join(absent, " AND ")+")")
+	}
+
+	if len(clauses) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(clauses, " OR ") + ")"
+}
+
+// logContains matches a lowercase marker anywhere in the message.
+func logContains(marker string) string {
+	return "lower(" + colLog + ") LIKE '%" + marker + "%'"
 }

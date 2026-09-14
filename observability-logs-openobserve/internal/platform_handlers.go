@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 
 	"github.com/openchoreo/community-modules/observability-logs-openobserve/internal/api/gen"
 	"github.com/openchoreo/community-modules/observability-logs-openobserve/internal/openobserve"
@@ -20,6 +21,13 @@ func (h *LogsHandler) QueryPlatformLogs(
 		return gen.QueryPlatformLogs400JSONResponse{
 			Title:   ptr(gen.BadRequest),
 			Message: ptr("request body is required"),
+		}, nil
+	}
+
+	if key, ok := firstInvalidLabelKey(request.Body); !ok {
+		return gen.QueryPlatformLogs400JSONResponse{
+			Title:   ptr(gen.BadRequest),
+			Message: ptr(fmt.Sprintf("label key %q is not a valid Kubernetes label key", key)),
 		}, nil
 	}
 
@@ -79,6 +87,13 @@ func (h *LogsHandler) QueryPlatformLogFilterValues(
 		}, nil
 	}
 	body := request.Body
+
+	if key, ok := firstInvalidLabelKey(&body.Query); !ok {
+		return gen.QueryPlatformLogFilterValues400JSONResponse{
+			Title:   ptr(gen.BadRequest),
+			Message: ptr(fmt.Sprintf("label key %q is not a valid Kubernetes label key", key)),
+		}, nil
+	}
 
 	filter := string(body.Filter)
 	column, ok := openobserve.PlatformFilterField(filter)
@@ -179,4 +194,28 @@ func derefSlice(v *[]string) []string {
 		return nil
 	}
 	return *v
+}
+
+// firstInvalidLabelKey reports the first label key that is not a well-formed Kubernetes
+// label key, if any.
+//
+// Label keys become column names, so unlike values they cannot be escaped into safety. A
+// malformed key is refused here rather than silently dropped: dropping it would widen the
+// query, returning records the caller did not ask for.
+func firstInvalidLabelKey(body *gen.PlatformLogsQueryRequest) (string, bool) {
+	if body.Labels == nil {
+		return "", true
+	}
+	// Sorted so the key reported is the same one on every call for a given request.
+	keys := make([]string, 0, len(*body.Labels))
+	for k := range *body.Labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if !openobserve.IsValidLabelKey(k) {
+			return k, false
+		}
+	}
+	return "", true
 }

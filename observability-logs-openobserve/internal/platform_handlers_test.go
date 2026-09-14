@@ -298,3 +298,60 @@ func TestQueryPlatformLogFilterValues_SearchFailure(t *testing.T) {
 		t.Fatalf("expected 500 response, got %T", resp)
 	}
 }
+
+// A label key becomes a column name, so it cannot be escaped into safety the way a value
+// can. A malformed key is refused rather than dropped: dropping it would widen the query
+// and return records the caller never asked for.
+func TestQueryPlatformLogs_RejectsMalformedLabelKey(t *testing.T) {
+	handler := NewLogsHandler(nil, nil, testLogger())
+
+	req := platformLogsRequest()
+	labels := map[string]string{"x = 1 OR 1=1 OR y": "v"}
+	req.Body.Labels = &labels
+
+	resp, err := handler.QueryPlatformLogs(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := resp.(gen.QueryPlatformLogs400JSONResponse); !ok {
+		t.Fatalf("expected 400 response, got %T", resp)
+	}
+}
+
+func TestQueryPlatformLogFilterValues_RejectsMalformedLabelKey(t *testing.T) {
+	handler := NewLogsHandler(nil, nil, testLogger())
+
+	req := filterValuesRequest(gen.Namespace)
+	labels := map[string]string{"a'b": "v"}
+	req.Body.Query.Labels = &labels
+
+	resp, err := handler.QueryPlatformLogFilterValues(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := resp.(gen.QueryPlatformLogFilterValues400JSONResponse); !ok {
+		t.Fatalf("expected 400 response, got %T", resp)
+	}
+}
+
+// A well-formed key still reaches the backend.
+func TestQueryPlatformLogs_AcceptsValidLabelKey(t *testing.T) {
+	var sqls []string
+	server := platformServer(t, &sqls, nil, 0)
+	defer server.Close()
+
+	req := platformLogsRequest()
+	labels := map[string]string{"openchoreo.dev/plane": "dataplane"}
+	req.Body.Labels = &labels
+
+	resp, err := platformHandler(t, server.URL).QueryPlatformLogs(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := resp.(gen.QueryPlatformLogs200JSONResponse); !ok {
+		t.Fatalf("expected 200 response, got %T", resp)
+	}
+	if len(sqls) == 0 || !strings.Contains(sqls[0], `"kubernetes_labels_openchoreo_dev_plane" = 'dataplane'`) {
+		t.Errorf("label filter did not reach the query: %v", sqls)
+	}
+}

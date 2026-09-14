@@ -3,7 +3,30 @@
 
 package openobserve
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+// labelKeyPattern is the Kubernetes label key grammar: an optional DNS-subdomain prefix
+// followed by "/", then a name of alphanumerics with "-", "_" and "." allowed inside.
+//
+// Label keys become column names rather than string literals, so they cannot be escaped
+// the way a value can. Anything outside this grammar is rejected instead: a key like
+// `x = 1 OR 1=1 OR y` would otherwise be concatenated into the predicate verbatim and make
+// it always true, which on this endpoint means returning records the caller never selected.
+var labelKeyPattern = regexp.MustCompile(
+	`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?` +
+		`[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$`)
+
+// IsValidLabelKey reports whether a key is a well-formed Kubernetes label key.
+func IsValidLabelKey(key string) bool {
+	// 253 for the prefix, "/", and 63 for the name.
+	if key == "" || len(key) > 317 {
+		return false
+	}
+	return labelKeyPattern.MatchString(key)
+}
 
 // OpenObserve column names for querying container logs by raw Kubernetes coordinates.
 //
@@ -46,9 +69,18 @@ func mangleLabelKey(key string) string {
 	return strings.NewReplacer(".", "_", "/", "_", "-", "_").Replace(key)
 }
 
-// labelColumn returns the full column name a pod label is stored in.
-func labelColumn(key string) string {
+// labelColumnName returns the column a pod label is stored under, as OpenObserve names it.
+func labelColumnName(key string) string {
 	return labelColumnPrefix + mangleLabelKey(key)
+}
+
+// labelColumn returns that column quoted, ready to sit in SQL.
+//
+// Quoting is belt and braces: callers reject keys outside the Kubernetes grammar before
+// reaching here, and a quoted identifier cannot break out of its own name even if one
+// slipped through.
+func labelColumn(key string) string {
+	return quoteIdentifier(labelColumnName(key))
 }
 
 // knownLabelKeys are the label keys this adapter can spell back in Kubernetes form.
