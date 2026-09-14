@@ -18,6 +18,9 @@ common:
 fluent-bit:
   enabled: true
 
+  # Name of the cluster these records were collected from. REQUIRED
+  clusterInstance: ""
+
   existingConfigMap: "fluent-bit"
 
   dnsPolicy: ClusterFirstWithHostNet
