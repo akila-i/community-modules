@@ -378,6 +378,10 @@ func TestIsValidLabelKey(t *testing.T) {
 		"pod-template-hash",
 		"version_id",
 		"a",
+		// Kubernetes bounds the name at 63 and the prefix at 253, each on its own.
+		strings.Repeat("a", 63),
+		strings.Repeat("a", 253) + "/name",
+		"prefix.io/" + strings.Repeat("a", 63),
 	}
 	for _, key := range valid {
 		if !IsValidLabelKey(key) {
@@ -398,6 +402,11 @@ func TestIsValidLabelKey(t *testing.T) {
 		"-leading-dash",
 		"trailing-dash-",
 		strings.Repeat("a", 318),
+		// One over each component limit. The whole key is well under 317, so only a
+		// per-component check catches these.
+		strings.Repeat("a", 64),
+		"prefix.io/" + strings.Repeat("a", 64),
+		strings.Repeat("a", 254) + "/name",
 	}
 	for _, key := range invalid {
 		if IsValidLabelKey(key) {

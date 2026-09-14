@@ -21,11 +21,26 @@ var labelKeyPattern = regexp.MustCompile(
 
 // IsValidLabelKey reports whether a key is a well-formed Kubernetes label key.
 func IsValidLabelKey(key string) bool {
-	// 253 for the prefix, "/", and 63 for the name.
+	// 253 for the prefix, "/", and 63 for the name - a cheap bail before the pattern.
 	if key == "" || len(key) > 317 {
 		return false
 	}
-	return labelKeyPattern.MatchString(key)
+	if !labelKeyPattern.MatchString(key) {
+		return false
+	}
+
+	// Kubernetes bounds the two halves separately, and the pattern says nothing about
+	// length. Checking only the whole key would admit a name longer than any pod could
+	// carry, and a filter on it would query a column that cannot exist - matching nothing,
+	// with no indication the key was the problem.
+	name := key
+	if slash := strings.IndexByte(key, '/'); slash >= 0 {
+		if slash > 253 {
+			return false
+		}
+		name = key[slash+1:]
+	}
+	return len(name) <= 63
 }
 
 // OpenObserve column names for querying container logs by raw Kubernetes coordinates.
