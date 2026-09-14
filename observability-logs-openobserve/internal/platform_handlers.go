@@ -128,13 +128,13 @@ func (h *LogsHandler) QueryPlatformLogFilterValues(
 	}
 
 	return gen.QueryPlatformLogFilterValues200JSONResponse{
-		Filter:      filter,
-		Values:      values,
+		Filter: filter,
+		Values: values,
+		// The contract treats this as a sense of scale rather than a guaranteed total,
+		// because counting distinct values exactly is expensive on a high-cardinality
+		// field. SQL can afford it here, so it is the exact count.
 		TotalValues: result.TotalValues,
-		// A distinct count over the same conditions, so this is the exact number of
-		// matching values rather than a bound on it.
-		TotalRelation: gen.Eq,
-		TookMs:        result.Took,
+		TookMs:      result.Took,
 	}, nil
 }
 

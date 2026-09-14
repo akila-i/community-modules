@@ -200,10 +200,6 @@ func TestQueryPlatformLogFilterValues_Success(t *testing.T) {
 	if ok.TotalValues != 2 {
 		t.Errorf("totalValues = %d, want 2", ok.TotalValues)
 	}
-	// A distinct count is exact, so the total is never a lower bound.
-	if ok.TotalRelation != gen.Eq {
-		t.Errorf("totalRelation = %s, want eq", ok.TotalRelation)
-	}
 	if ok.TookMs != 7 {
 		t.Errorf("tookMs = %d, want 7", ok.TookMs)
 	}
