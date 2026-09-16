@@ -60,7 +60,7 @@ func filterValuesRequest(filter gen.PlatformLogFilterValuesRequestFilter) gen.Qu
 }
 
 func TestQueryPlatformLogFilterValues_NilBody(t *testing.T) {
-	handler := NewLogsHandler(nil, nil, nil, nil, testLogger())
+	handler := NewLogsHandler(nil, nil, nil, nil, nil, testLogger())
 
 	resp, err := handler.QueryPlatformLogFilterValues(
 		context.Background(), gen.QueryPlatformLogFilterValuesRequestObject{Body: nil})
@@ -75,7 +75,7 @@ func TestQueryPlatformLogFilterValues_NilBody(t *testing.T) {
 // A filter this adapter cannot list is refused, rather than answered with an empty list
 // that would read as "no values".
 func TestQueryPlatformLogFilterValues_UnlistableFilter(t *testing.T) {
-	handler := NewLogsHandler(nil, nil, nil, nil, testLogger())
+	handler := NewLogsHandler(nil, nil, nil, nil, nil, testLogger())
 
 	resp, err := handler.QueryPlatformLogFilterValues(
 		context.Background(), filterValuesRequest("labels"))
