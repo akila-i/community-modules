@@ -251,16 +251,16 @@ these entries, or audit collection silently stops.
 
 ### Configuration
 
-| Value | Default | Purpose |
-| ----- | ------- | ------- |
-| `auditLogs.enabled` | `false` | Route audit records to their own stream |
-| `auditLogs.producers` | the two above | The trusted-producer allowlist |
-| `common.openObserveAuditStream` | `audit_logs` | Stream name; lowercase letters, digits and `_` only |
-| `openObserveSetup.auditLogsRetentionDays` | `365` | Audit stream retention in days, at least 3 |
-| `auditLogs.output.host` | `""` | OpenObserve to ship audit records to; empty uses `common.openObserveHost` |
-| `auditLogs.output.port` | `common.openObservePort` | Port of `auditLogs.output.host` |
-| `auditLogs.output.org` | `common.openObserveOrg` | Organization on `auditLogs.output.host` |
-| `auditLogs.output.tlsEnabled` | `common.openObserveTlsEnabled` | Use TLS to reach `auditLogs.output.host` |
+| Value                                     | Default                        | Purpose                                                                   |
+| ----------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
+| `auditLogs.enabled`                       | `false`                        | Route audit records to their own stream                                   |
+| `auditLogs.producers`                     | the two above                  | The trusted-producer allowlist                                            |
+| `common.openObserveAuditStream`           | `audit_logs`                   | Stream name; lowercase letters, digits and `_` only                       |
+| `openObserveSetup.auditLogsRetentionDays` | `365`                          | Audit stream retention in days, at least 3                                |
+| `auditLogs.output.host`                   | `""`                           | OpenObserve to ship audit records to; empty uses `common.openObserveHost` |
+| `auditLogs.output.port`                   | `common.openObservePort`       | Port of `auditLogs.output.host`                                           |
+| `auditLogs.output.org`                    | `common.openObserveOrg`        | Organization on `auditLogs.output.host`                                   |
+| `auditLogs.output.tlsEnabled`             | `common.openObserveTlsEnabled` | Use TLS to reach `auditLogs.output.host`                                  |
 
 The setup job creates the audit stream with its retention on every install, and changing
 the retention and upgrading applies it to the existing stream.
@@ -295,17 +295,18 @@ This chart only ships records to that OpenObserve. It does not configure it, and
 
 Bundled upstream Helm charts:
 
-| Chart | Repository |
-| ----- | ---------- |
-| fluent-bit | https://fluent.github.io/helm-charts |
-| openobserve-standalone | https://charts.openobserve.ai |
-| openobserve | https://charts.openobserve.ai |
+| Chart                  | Repository                           |
+| ---------------------- | ------------------------------------ |
+| fluent-bit             | https://fluent.github.io/helm-charts |
+| openobserve-standalone | https://charts.openobserve.ai        |
+| openobserve            | https://charts.openobserve.ai        |
 
 ## Compatibility
 
 > **Note:** The Helm chart versions specified in the installation commands above are for the latest module version compatible with the development version of OpenChoreo. Refer to the compatibility table below to determine the appropriate module version for your OpenChoreo installation.
 
-| Module Version | OpenChoreo Version |
-| -------------- | ------------------ |
-| >= v0.6.x      | >= v1.2.x          |
-| >= v0.4.x      | >= v1.0.x          |
+| OpenChoreo Version | Module Version |
+| ------------------ | -------------- |
+| v1.3.0 and later   | 0.7.x          |
+| v1.2.x             | 0.6.x          |
+| v1.0.x - v1.1.x    | 0.4.x - 0.5.x  |

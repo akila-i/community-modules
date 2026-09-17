@@ -63,7 +63,7 @@ helm upgrade --install observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.3 \
+  --version 0.6.0 \
   --set adapter.openSearchSecretName="opensearch-admin-credentials" \
   --set openSearchSetup.openSearchSecretName="opensearch-admin-credentials"
 ```
@@ -75,7 +75,7 @@ helm upgrade --install observability-logs-opensearch \
 >   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
 >   --create-namespace \
 >   --namespace openchoreo-observability-plane \
->   --version 0.5.3 \
+>   --version 0.6.0 \
 >   --set adapter.openSearchSecretName="opensearch-admin-credentials" \
 >   --set openSearch.enabled=false \
 >   --set openSearchSetup.openSearchSecretName="opensearch-admin-credentials"
@@ -110,7 +110,7 @@ helm upgrade observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.3 \
+  --version 0.6.0 \
   --reuse-values \
   --set fluent-bit.enabled=true \
   --set fluentBitCustomizations.clusterInstance=singleCluster
@@ -133,7 +133,7 @@ helm upgrade --install observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.3 \
+  --version 0.6.0 \
   --set adapter.openSearchSecretName="opensearch-admin-credentials" \
   --set openSearch.enabled=false \
   --set openSearchCluster.enabled=true \
@@ -161,7 +161,7 @@ helm upgrade --install observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.3 \
+  --version 0.6.0 \
   --set adapter.enabled=false \
   --set openSearch.enabled=false \
   --set openSearchCluster.enabled=false \
@@ -195,7 +195,7 @@ helm upgrade observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.3 \
+  --version 0.6.0 \
   --reuse-values \
   --set fluent-bit.enabled=true \
   --set fluentBitCustomizations.clusterInstance=singleCluster \
@@ -218,7 +218,7 @@ On the **observability plane cluster**, Fluent Bit ships to the in-cluster OpenS
 helm upgrade observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --namespace openchoreo-observability-plane \
-  --version 0.5.3 \
+  --version 0.6.0 \
   --reuse-values \
   --set fluent-bit.enabled=true \
   --set fluentBitCustomizations.clusterInstance=<op-cluster-name> \
@@ -232,7 +232,7 @@ helm upgrade --install observability-logs-opensearch \
   oci://ghcr.io/openchoreo/helm-charts/observability-logs-opensearch \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.5.3 \
+  --version 0.6.0 \
   --set adapter.enabled=false \
   --set openSearch.enabled=false \
   --set openSearchCluster.enabled=false \
@@ -268,7 +268,13 @@ which the kubelet writes — not on anything in the log line. This is what makes
 trustworthy: a workload that prints
 
 ```json
-{"level":"INFO","msg":"AUDIT-LOG","producer":"openchoreo-api","action":"delete_project","result":"success"}
+{
+  "level": "INFO",
+  "msg": "AUDIT-LOG",
+  "producer": "openchoreo-api",
+  "action": "delete_project",
+  "result": "success"
+}
 ```
 
 to its stdout produces a line that looks exactly like a real audit record, and it still
@@ -285,14 +291,14 @@ Two consequences worth knowing before you change it:
 
 ### Configuring the audit destination
 
-| Value | Default | Purpose |
-| ----- | ------- | ------- |
-| `auditLogs.enabled` | `false` | Route audit records to their own index |
-| `auditLogs.indexPrefix` | `audit-logs-` | Index name prefix; daily indices are `audit-logs-YYYY-MM-DD` |
-| `auditLogs.producers` | the two above | The trusted-producer allowlist |
-| `auditLogs.output.host` | `""` | OpenSearch to ship audit records to; empty uses `fluent-bit.openSearchHost` |
-| `auditLogs.output.port` | `fluent-bit.openSearchPort` | Port of `auditLogs.output.host` |
-| `auditLogs.output.vHost` | `auditLogs.output.host` | TLS SNI hostname for `auditLogs.output.host` |
+| Value                    | Default                     | Purpose                                                                     |
+| ------------------------ | --------------------------- | --------------------------------------------------------------------------- |
+| `auditLogs.enabled`      | `false`                     | Route audit records to their own index                                      |
+| `auditLogs.indexPrefix`  | `audit-logs-`               | Index name prefix; daily indices are `audit-logs-YYYY-MM-DD`                |
+| `auditLogs.producers`    | the two above               | The trusted-producer allowlist                                              |
+| `auditLogs.output.host`  | `""`                        | OpenSearch to ship audit records to; empty uses `fluent-bit.openSearchHost` |
+| `auditLogs.output.port`  | `fluent-bit.openSearchPort` | Port of `auditLogs.output.host`                                             |
+| `auditLogs.output.vHost` | `auditLogs.output.host`     | TLS SNI hostname for `auditLogs.output.host`                                |
 
 The index template and retention policy are applied on **every** install, whether or not
 `auditLogs.enabled` is set. This is deliberate: an index created before its template gets
@@ -393,8 +399,9 @@ Bundled upstream Helm charts:
 
 > **Note:** The Helm chart versions specified in the installation commands above are for the latest module version compatible with the development version of OpenChoreo. Refer to the compatibility table below to determine the appropriate module version for your OpenChoreo installation.
 
-| Module Version | OpenChoreo Version |
-| -------------- | ------------------ |
-| v0.5.x         | v1.2.x             |
-| v0.4.x         | v1.1.x             |
-| v0.3.x         | v1.0.x             |
+| OpenChoreo Version | Module Version |
+| ------------------ | -------------- |
+| v1.3.0 and later   | 0.6.x          |
+| v1.2.x             | 0.5.x          |
+| v1.1.x             | 0.4.x          |
+| v1.0.x             | 0.3.x          |

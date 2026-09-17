@@ -27,7 +27,7 @@ helm upgrade --install observability-metrics-prometheus \
   oci://ghcr.io/openchoreo/helm-charts/observability-metrics-prometheus \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.7.0
+  --version 0.7.1
 ```
 
 ### Multi-cluster topology
@@ -39,7 +39,7 @@ helm upgrade --install observability-metrics-prometheus \
   oci://ghcr.io/openchoreo/helm-charts/observability-metrics-prometheus \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.7.0 \
+  --version 0.7.1 \
   --set global.installationMode="multiClusterReceiver" \
   --set-json 'prometheusCustomizations.http.hostnames=["prometheus.observability.example.com"]'
 ```
@@ -53,7 +53,7 @@ helm upgrade --install observability-metrics-prometheus \
   oci://ghcr.io/openchoreo/helm-charts/observability-metrics-prometheus \
   --create-namespace \
   --namespace openchoreo-observability-plane \
-  --version 0.7.0 \
+  --version 0.7.1 \
   --set global.installationMode="multiClusterExporter" \
   --set prometheusCustomizations.http.observabilityPlaneUrl=http://prometheus.observability.example.com:9091/api/v1/write \
   --set kube-prometheus-stack.prometheus.enabled=false \
@@ -228,7 +228,7 @@ Bundled upstream Helm charts:
 
 > **Note:** The Helm chart versions specified in the installation commands above reflect the latest module version and is compatible with the development version of OpenChoreo. Refer to the compatibility table below to determine the appropriate module version for your OpenChoreo installation.
 
-| Module Version | OpenChoreo Version |
-| -------------- | ------------------ |
-| >= v0.4.x      | v1.1.x             |
-| v0.3.x         | v1.0.x             |
+| OpenChoreo Version | Module Version  |
+| ------------------ | --------------- |
+| v1.1.x and later   | 0.6.x and later |
+| v1.0.x             | 0.3.x           |
