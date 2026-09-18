@@ -332,6 +332,41 @@ Needing a different retention is the reason audit is a separate stream rather th
 filter over the container logs, so the two are not expected to match. Changing the value
 and upgrading reconciles the policy onto the indices that already exist.
 
+## Upgrading from 0.5.x
+
+0.6.0 maps `kubernetes.labels` as a `flat_object`, so every pod label is searchable, and
+maps `openchoreo_cluster_instance`. Daily indices created after the upgrade get this
+mapping from the index template. Existing `container-logs-*` indices, including the index
+for the day of the upgrade, keep the 0.5.x mapping.
+
+**No action is needed for existing logs to stay queryable.** Component, project and
+workflow logs and log alerts only use fields that the 0.5.x mapping already indexes, so
+they work across old and new indices. On indices that keep the 0.5.x mapping, the
+platform logs endpoint has these limits:
+
+- Label filters only match the labels that 0.5.x indexed: `openchoreo.dev/component-uid`, `openchoreo.dev/environment-uid`, `openchoreo.dev/project-uid`, `openchoreo.dev/namespace`, `openchoreo.dev/component`, `openchoreo.dev/environment`, `openchoreo.dev/project`, `build-name`, `target`, `uuid`, `version` and `version_id`. Filters on any other label return no records from these indices.
+- Cluster instance filters return no records from these indices, and the `clusterInstance` filter values do not include them. Records written before the upgrade do not carry `openchoreo_cluster_instance`, so rebuilding cannot add it to them.
+
+These limits go away on their own as old indices reach the end of their retention period.
+
+### Rebuilding existing indices (optional)
+
+To filter logs written before the upgrade on any label through the platform logs endpoint,
+rebuild the existing indices on the 0.6.0 mapping. After the `helm upgrade` to 0.6.0 and
+the setup job has completed, run:
+
+```bash
+./scripts/upgrade-to-0-6.sh
+```
+
+The script rebuilds each index under its own name through a temporary
+`migrate-0-6-<index>` copy. It is safe to re-run and resumes an interrupted run. Before running it:
+
+- **Each day's logs are unavailable to all queries while that day's index is being rebuilt.** This includes component and project logs. Other days stay queryable, and the unavailable period for an index grows with its size.
+- Today's index is skipped because Fluent Bit is still writing to it. Run the script again the next day to rebuild it.
+- A rebuilt index gets a new creation date, so ISM keeps it up to one retention period longer than usual.
+- OpenSearch needs free disk space for a second copy of the largest index.
+
 ## Troubleshooting
 
 ### Observer returns no logs
