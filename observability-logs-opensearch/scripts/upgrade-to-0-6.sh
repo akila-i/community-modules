@@ -47,7 +47,19 @@ for bin in kubectl curl jq; do
 done
 
 PF_PID=""
-cleanup() { [ -n "${PF_PID:-}" ] && kill "$PF_PID" 2>/dev/null || true; }
+# Source index whose writes are blocked; cleared once it has been deleted. If the script
+# exits in between, cleanup lifts the block so the index is left as it was found.
+BLOCKED=""
+cleanup() {
+  if [ -n "$BLOCKED" ]; then
+    warn "lifting the write block on $BLOCKED"
+    if [ "$(OS -XPUT "$BASE/$BLOCKED/_settings" -d '{"index.blocks.write": null}' 2>/dev/null \
+          | jq -r '.acknowledged // false' 2>/dev/null)" != "true" ]; then
+      fail "could not lift it; run: PUT $BLOCKED/_settings {\"index.blocks.write\": null}"
+    fi
+  fi
+  [ -n "${PF_PID:-}" ] && kill "$PF_PID" 2>/dev/null || true
+}
 trap cleanup EXIT
 
 step "Port-forwarding $OS_SERVICE -> localhost:$LOCAL_PORT"
@@ -55,6 +67,12 @@ kubectl port-forward -n "$NS" "$OS_SERVICE" "$LOCAL_PORT:9200" >/dev/null 2>&1 &
 PF_PID=$!
 PF_READY=0
 for _ in $(seq 1 30); do
+  # A port-forward that exited (e.g. LOCAL_PORT already in use) must not let another
+  # listener on that port pass as OpenSearch and receive the credentials.
+  if ! kill -0 "$PF_PID" 2>/dev/null; then
+    fail "port-forward exited; is localhost:$LOCAL_PORT already in use? set LOCAL_PORT to a free port"
+    exit 1
+  fi
   if curl -sS -k "https://localhost:$LOCAL_PORT" >/dev/null 2>&1; then PF_READY=1; break; fi
   sleep 1
 done
@@ -179,19 +197,20 @@ while IFS= read -r IDX; do
 
     expect_ack "blocking writes on $IDX" \
       "$(OS -XPUT "$BASE/$IDX/_settings" -d '{"index.blocks.write": true}')"
+    BLOCKED="$IDX"
     BEFORE=$(doc_count "$IDX")
 
     expect_ack "creating $TMP" "$(OS -XPUT "$BASE/$TMP" -d "$TMP_BODY")"
     reindex "$IDX" "$TMP"
     COPIED=$(doc_count "$TMP")
     if [ "$COPIED" -ne "$BEFORE" ]; then
-      fail "$TMP has $COPIED documents, $IDX has $BEFORE; $IDX was not modified beyond a write block"
-      info "remove it with: PUT $IDX/_settings {\"index.blocks.write\": null}"
+      fail "$TMP has $COPIED documents, $IDX has $BEFORE; $IDX was not modified"
       exit 1
     fi
     ok "copied $COPIED documents to $TMP"
 
     expect_ack "deleting $IDX" "$(OS -XDELETE "$BASE/$IDX")"
+    BLOCKED=""
   else
     info "resuming: $IDX was deleted by an interrupted run, restoring from $TMP"
   fi
