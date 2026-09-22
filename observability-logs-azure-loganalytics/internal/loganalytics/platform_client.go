@@ -28,6 +28,9 @@ func (c *Client) GetPlatformLogs(ctx context.Context, p PlatformLogsParams) (*Pl
 	if err != nil {
 		return nil, fmt.Errorf("loganalytics: GetPlatformLogs: %w", err)
 	}
+	if qErr := queryError(resp); qErr != nil {
+		return nil, fmt.Errorf("loganalytics: GetPlatformLogs: %w", qErr)
+	}
 
 	records, ok := findTable(resp.Tables, "LogMessage")
 	if !ok {
@@ -80,6 +83,9 @@ func (c *Client) GetPlatformLogFilterValues(
 	if err != nil {
 		return nil, fmt.Errorf("loganalytics: GetPlatformLogFilterValues: %w", err)
 	}
+	if qErr := queryError(resp); qErr != nil {
+		return nil, fmt.Errorf("loganalytics: GetPlatformLogFilterValues: %w", qErr)
+	}
 
 	values := []PlatformLogFilterValue{}
 	if t, ok := findTable(resp.Tables, "Value"); ok {
@@ -100,4 +106,18 @@ func (c *Client) GetPlatformLogFilterValues(
 		TotalValues: total,
 		TookMs:      int(time.Since(startedAt).Milliseconds()),
 	}, nil
+}
+
+// queryError reports a failure the service attached to an otherwise-200
+// response. A multi-statement query can partially fail - one statement is
+// answered and another is not - and without this that surfaces only as a
+// missing table, which is indistinguishable from an empty result.
+//
+// ErrorInfo implements error, and its Error() carries the service's full JSON
+// detail, which is what makes a partial failure diagnosable.
+func queryError(resp azlogs.QueryWorkspaceResponse) error {
+	if resp.Error == nil {
+		return nil
+	}
+	return fmt.Errorf("loganalytics: query returned %q: %w", resp.Error.Code, resp.Error)
 }

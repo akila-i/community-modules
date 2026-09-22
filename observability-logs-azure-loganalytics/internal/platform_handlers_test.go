@@ -317,8 +317,11 @@ func TestUnsupportedSignalsAnswer501(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := events.(gen.QueryEvents501JSONResponse); !ok {
+	ev, ok := events.(gen.QueryEvents501JSONResponse)
+	if !ok {
 		t.Errorf("events: got %T, want 501", events)
+	} else if ev.ErrorCode == nil || *ev.ErrorCode == "" {
+		t.Error("events: 501 should carry an error code, like every other status here")
 	}
 
 	audit, err := h.QueryAuditLogs(ctx, gen.QueryAuditLogsRequestObject{})
@@ -335,5 +338,29 @@ func TestUnsupportedSignalsAnswer501(t *testing.T) {
 	}
 	if _, ok := values.(gen.QueryAuditLogFilterValues501JSONResponse); !ok {
 		t.Errorf("audit filter values: got %T, want 501", values)
+	}
+}
+
+// The observer caps valueSearch too, but an adapter runs without in-process
+// auth and does not assume the observer is its only caller.
+func TestQueryPlatformLogFilterValues_RejectsOverlongValueSearch(t *testing.T) {
+	start, end := window()
+	long := strings.Repeat("a", 257)
+
+	resp, err := platformHandler(&stubQueryAPI{}).QueryPlatformLogFilterValues(context.Background(),
+		gen.QueryPlatformLogFilterValuesRequestObject{Body: &gen.PlatformLogFilterValuesRequest{
+			Filter:      gen.Namespace,
+			ValueSearch: &long,
+			Query:       gen.PlatformLogsQueryRequest{StartTime: start, EndTime: end},
+		}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	bad, ok := resp.(gen.QueryPlatformLogFilterValues400JSONResponse)
+	if !ok {
+		t.Fatalf("got %T, want 400", resp)
+	}
+	if bad.Message == nil || !strings.Contains(*bad.Message, "valueSearch") {
+		t.Errorf("unhelpful message: %+v", bad.Message)
 	}
 }

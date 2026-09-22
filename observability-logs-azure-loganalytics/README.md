@@ -348,7 +348,7 @@ components, the charts OpenChoreo depends on but does not ship
 (cert-manager, external-secrets, OpenBao, Thunder,...), and user workloads
 alike.
 
-Platformlogs are not a different set of records from `POST /api/v1/logs/query`,
+Platform logs are not a different set of records from `POST /api/v1/logs/query`,
 and not a different store — both read `ContainerLogV2`. Two things differ:
 
 - **How a record is addressed.** `/api/v1/logs/query` takes a project,

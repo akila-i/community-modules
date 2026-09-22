@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,9 @@ func recordsTable(rows ...azlogs.Row) azlogs.Table {
 	}, rows...)
 }
 
+// goodRow mirrors the projection. ContainerImage arrives already assembled -
+// the strcat over imageRepo/image/imageTag happens in KQL, not in Go - so this
+// row carries the full reference the query produces, not AMA's raw `image`.
 func goodRow() azlogs.Row {
 	return azlogs.Row{
 		"2026-09-01T10:00:00.123Z", "reconcile failed", "ERROR", "aks-prod-01",
@@ -225,5 +229,44 @@ func TestParsePodLabels(t *testing.T) {
 	got := parsePodLabels(`{"a":"1","n":2,"z":null}`)
 	if got["a"] != "1" || got["n"] != "2" || got["z"] != "" {
 		t.Errorf("unexpected mapping: %v", got)
+	}
+}
+
+// A multi-statement query can be answered partially, with the service
+// attaching an error to an otherwise-200 response. Reporting the page as
+// complete in that case would be worse than failing.
+func TestGetPlatformLogs_SurfacesServiceError(t *testing.T) {
+	var info azlogs.ErrorInfo
+	if err := info.UnmarshalJSON([]byte(`{"code":"PartialError","message":"one statement failed"}`)); err != nil {
+		t.Fatalf("unmarshalling ErrorInfo: %v", err)
+	}
+
+	api := &stubAPI{resp: azlogs.QueryWorkspaceResponse{
+		QueryResults: azlogs.QueryResults{
+			Tables: []azlogs.Table{recordsTable(goodRow())},
+			Error:  &info,
+		},
+	}}
+
+	_, err := testClient(api).GetPlatformLogs(context.Background(), params())
+	if err == nil {
+		t.Fatal("expected the service-attached error to surface")
+	}
+	if !strings.Contains(err.Error(), "PartialError") {
+		t.Errorf("error should name the service code, got %v", err)
+	}
+}
+
+// The exported constructor makes a nil logger easy to pass, and the degraded
+// paths log.
+func TestNewClientWithQueryAPI_ToleratesNilLogger(t *testing.T) {
+	api := &stubAPI{resp: azlogs.QueryWorkspaceResponse{
+		QueryResults: azlogs.QueryResults{Tables: []azlogs.Table{recordsTable(goodRow())}},
+	}}
+	client := NewClientWithQueryAPI(api, Config{WorkspaceID: "ws"}, nil)
+
+	// No Total table, so this takes the path that warns.
+	if _, err := client.GetPlatformLogs(context.Background(), params()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
