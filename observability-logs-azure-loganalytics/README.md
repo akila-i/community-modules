@@ -424,6 +424,14 @@ rather than silently dropped, because dropping a filter widens the query.
 `KubernetesMetadata` does not carry one, so there is nothing to report.
 It is optional in the adapter contract.
 
+`containerImage` is reassembled from three metadata fields, because the
+agent stores an image split across them: `ghcr.io/openchoreo/controller:1.3.0`
+arrives as `imageRepo` = `ghcr.io`, `image` = `openchoreo/controller` and
+`imageTag` = `1.3.0`. If an operator narrows `include_fields` and drops
+`imageRepo` or `imageTag`, the value degrades to whichever parts were
+collected rather than failing — so keep all four image fields in the
+ConfigMap if you want the full reference the other backends return.
+
 ## Shared webhook secret
 
 When `adapter.webhookAuth.enabled` is `true` (the default), the adapter

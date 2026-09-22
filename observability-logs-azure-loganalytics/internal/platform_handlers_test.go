@@ -313,31 +313,55 @@ func TestUnsupportedSignalsAnswer501(t *testing.T) {
 	h := platformHandler(&stubQueryAPI{})
 	ctx := context.Background()
 
-	events, err := h.QueryEvents(ctx, gen.QueryEventsRequestObject{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	ev, ok := events.(gen.QueryEvents501JSONResponse)
-	if !ok {
-		t.Errorf("events: got %T, want 501", events)
-	} else if ev.ErrorCode == nil || *ev.ErrorCode == "" {
-		t.Error("events: 501 should carry an error code, like every other status here")
+	// errorCode is checked on each: the contract's 501 examples leave it empty,
+	// but every other status this module serves carries one.
+	cases := []struct {
+		name string
+		call func() (any, error)
+		want func(any) (*string, bool)
+	}{
+		{
+			"events",
+			func() (any, error) { return h.QueryEvents(ctx, gen.QueryEventsRequestObject{}) },
+			func(r any) (*string, bool) {
+				v, ok := r.(gen.QueryEvents501JSONResponse)
+				return v.ErrorCode, ok
+			},
+		},
+		{
+			"audit logs",
+			func() (any, error) { return h.QueryAuditLogs(ctx, gen.QueryAuditLogsRequestObject{}) },
+			func(r any) (*string, bool) {
+				v, ok := r.(gen.QueryAuditLogs501JSONResponse)
+				return v.ErrorCode, ok
+			},
+		},
+		{
+			"audit log filter values",
+			func() (any, error) {
+				return h.QueryAuditLogFilterValues(ctx, gen.QueryAuditLogFilterValuesRequestObject{})
+			},
+			func(r any) (*string, bool) {
+				v, ok := r.(gen.QueryAuditLogFilterValues501JSONResponse)
+				return v.ErrorCode, ok
+			},
+		},
 	}
 
-	audit, err := h.QueryAuditLogs(ctx, gen.QueryAuditLogsRequestObject{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := audit.(gen.QueryAuditLogs501JSONResponse); !ok {
-		t.Errorf("audit logs: got %T, want 501", audit)
-	}
-
-	values, err := h.QueryAuditLogFilterValues(ctx, gen.QueryAuditLogFilterValuesRequestObject{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := values.(gen.QueryAuditLogFilterValues501JSONResponse); !ok {
-		t.Errorf("audit filter values: got %T, want 501", values)
+	for _, c := range cases {
+		resp, err := c.call()
+		if err != nil {
+			t.Errorf("%s: unexpected error: %v", c.name, err)
+			continue
+		}
+		code, ok := c.want(resp)
+		if !ok {
+			t.Errorf("%s: got %T, want 501", c.name, resp)
+			continue
+		}
+		if code == nil || *code == "" {
+			t.Errorf("%s: 501 should carry an error code", c.name)
+		}
 	}
 }
 
@@ -362,5 +386,53 @@ func TestQueryPlatformLogFilterValues_RejectsOverlongValueSearch(t *testing.T) {
 	}
 	if bad.Message == nil || !strings.Contains(*bad.Message, "valueSearch") {
 		t.Errorf("unhelpful message: %+v", bad.Message)
+	}
+}
+
+// 0 means "not supplied" in the contract and in the observer, so it must reach
+// the query as the default rather than as a single value.
+func TestQueryPlatformLogFilterValues_ZeroMaxValuesMeansDefault(t *testing.T) {
+	start, end := window()
+	api := &stubQueryAPI{tables: []azlogs.Table{
+		{Columns: cols("Value", "Count"), Rows: []azlogs.Row{{"a", float64(1)}}},
+		{Columns: cols("TotalValues"), Rows: []azlogs.Row{{float64(1)}}},
+	}}
+
+	zero := 0
+	if _, err := platformHandler(api).QueryPlatformLogFilterValues(context.Background(),
+		gen.QueryPlatformLogFilterValuesRequestObject{Body: &gen.PlatformLogFilterValuesRequest{
+			Filter:    gen.Namespace,
+			MaxValues: &zero,
+			Query:     gen.PlatformLogsQueryRequest{StartTime: start, EndTime: end},
+		}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(api.lastKQL, "| take 100") {
+		t.Errorf("maxValues 0 should mean the default, not take 1\n%s", api.lastKQL)
+	}
+}
+
+// The contract's maxLength counts characters, so a multi-byte phrase within the
+// limit must be accepted.
+func TestQueryPlatformLogFilterValues_ValueSearchCountsCharacters(t *testing.T) {
+	start, end := window()
+	api := &stubQueryAPI{tables: []azlogs.Table{
+		{Columns: cols("Value", "Count"), Rows: []azlogs.Row{{"a", float64(1)}}},
+		{Columns: cols("TotalValues"), Rows: []azlogs.Row{{float64(1)}}},
+	}}
+
+	// 256 characters, 768 bytes.
+	wide := strings.Repeat("\u65e5", 256)
+	resp, err := platformHandler(api).QueryPlatformLogFilterValues(context.Background(),
+		gen.QueryPlatformLogFilterValuesRequestObject{Body: &gen.PlatformLogFilterValuesRequest{
+			Filter:      gen.Namespace,
+			ValueSearch: &wide,
+			Query:       gen.PlatformLogsQueryRequest{StartTime: start, EndTime: end},
+		}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := resp.(gen.QueryPlatformLogFilterValues200JSONResponse); !ok {
+		t.Errorf("a 256-character multi-byte search should be accepted, got %T", resp)
 	}
 }

@@ -145,15 +145,13 @@ var levelAliases = []struct {
 // it from the message content instead.
 func resolveLogLevel(_, msg string) string {
 	// Step 1: structured JSON envelope (e.g. {"level":"info","msg":"..."})
-	if len(msg) > 0 && msg[0] == '{' {
-		var envelope map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(msg), &envelope); err == nil {
-			for _, key := range levelEnvelopeKeys {
-				if raw, ok := envelope[key]; ok {
-					var s string
-					if err := json.Unmarshal(raw, &s); err == nil && s != "" {
-						return normalizeLevel(s)
-					}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(msg), &envelope); err == nil {
+		for _, key := range levelEnvelopeKeys {
+			if raw, ok := envelope[key]; ok {
+				var s string
+				if err := json.Unmarshal(raw, &s); err == nil && s != "" {
+					return normalizeLevel(s)
 				}
 			}
 		}
