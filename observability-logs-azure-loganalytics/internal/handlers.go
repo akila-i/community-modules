@@ -288,7 +288,7 @@ func (h *LogsHandler) HandleAlertWebhook(ctx context.Context, request gen.Handle
 		)
 		return gen.HandleAlertWebhook500JSONResponse(makeError(gen.InternalServerError, errCodeInternal, "failed to forward alert to observer")), nil
 	}
-	status := gen.Success
+	status := gen.AlertWebhookResponseStatusSuccess
 	msg := "alert forwarded to observer"
 	return gen.HandleAlertWebhook200JSONResponse(gen.AlertWebhookResponse{
 		Status:  &status,
