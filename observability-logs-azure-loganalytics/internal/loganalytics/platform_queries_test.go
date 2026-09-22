@@ -164,8 +164,16 @@ func TestBuildPlatformLogFilterValuesKQL_ClusterInstanceIsDerived(t *testing.T) 
 	got := BuildPlatformLogFilterValuesKQL(PlatformLogFilterValuesParams{
 		Query: basePlatformParams(), Filter: FilterClusterInstance, MaxValues: 10,
 	})
-	if !strings.Contains(got, "| extend _value = "+ClusterInstanceExpr) {
-		t.Errorf("cluster instance values should come from _ResourceId\n%s", got)
+	// Base derives the column once; the values query reads it rather than
+	// recomputing the expression, so the two cannot drift.
+	if !strings.Contains(got, "| extend ClusterInstance = "+ClusterInstanceExpr) {
+		t.Errorf("Base should derive ClusterInstance from _ResourceId\n%s", got)
+	}
+	if !strings.Contains(got, "| extend _value = ClusterInstance") {
+		t.Errorf("values should read the derived column\n%s", got)
+	}
+	if strings.Count(got, ClusterInstanceExpr) != 1 {
+		t.Errorf("the derivation should appear exactly once\n%s", got)
 	}
 }
 
@@ -283,8 +291,106 @@ func TestLevelAliasExprMatchesNormalizer(t *testing.T) {
 func TestLevelExprCoversEveryEnvelopeKey(t *testing.T) {
 	kql := levelExpr()
 	for _, key := range levelEnvelopeKeys {
-		if !strings.Contains(kql, "LogMessage."+key) {
+		if !strings.Contains(kql, "_envelope."+key) {
 			t.Errorf("envelope key %q is checked in Go but not in KQL", key)
 		}
+	}
+	// The envelope is read through parse_json so a message stored as a string
+	// holding JSON text resolves the same way resolveLogLevel resolves it.
+	if !strings.Contains(kql, "| extend _envelope = parse_json(_msg)") {
+		t.Errorf("envelope should be parsed from the message text\n%s", kql)
+	}
+}
+
+// AMA splits a container image into repo, name and tag, and `image` alone is
+// the bare name - so the full reference has to be reassembled.
+func TestBuildPlatformLogsKQL_ContainerImageIsReassembled(t *testing.T) {
+	got := BuildPlatformLogsKQL(basePlatformParams())
+
+	for _, want := range []string{
+		"KubernetesMetadata.imageRepo",
+		"KubernetesMetadata.image)",
+		"KubernetesMetadata.imageTag",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("container image is missing %q\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "ContainerImage = strcat(") {
+		t.Errorf("container image should be assembled with strcat\n%s", got)
+	}
+}
+
+// The level ladder is expensive, so it only belongs in Base when a level
+// filter has to run before the take.
+func TestBuildPlatformLogsKQL_LevelLadderRunsWhereNeeded(t *testing.T) {
+	marker := "| extend _lvlRaw = case("
+
+	noFilter := BuildPlatformLogsKQL(basePlatformParams())
+	base, page, found := strings.Cut(noFilter, ";\nBase")
+	if !found {
+		t.Fatalf("expected a let-bound Base\n%s", noFilter)
+	}
+	if strings.Contains(base, marker) {
+		t.Errorf("without a level filter the ladder should not run over the window\n%s", base)
+	}
+	if !strings.Contains(page, marker) {
+		t.Errorf("the ladder should still run over the page, since Level is projected\n%s", page)
+	}
+
+	p := basePlatformParams()
+	p.LogLevels = []string{"ERROR"}
+	withFilter := BuildPlatformLogsKQL(p)
+	filterBase, _, _ := strings.Cut(withFilter, ";\nBase")
+	if !strings.Contains(filterBase, marker) {
+		t.Errorf("a level filter needs the ladder before the take\n%s", filterBase)
+	}
+	if strings.Count(withFilter, marker) != 1 {
+		t.Errorf("the ladder should not be emitted twice\n%s", withFilter)
+	}
+}
+
+// A filter-values query never projects Level, so it should not pay for the
+// ladder unless it is filtering on one.
+func TestBuildPlatformLogFilterValuesKQL_SkipsLevelLadder(t *testing.T) {
+	got := BuildPlatformLogFilterValuesKQL(PlatformLogFilterValuesParams{
+		Query: basePlatformParams(), Filter: FilterNamespace, MaxValues: 10,
+	})
+	if strings.Contains(got, "| extend _lvlRaw = case(") {
+		t.Errorf("filter values should not compute the level\n%s", got)
+	}
+}
+
+// The builder is exported, so it cannot rely on the handler having clamped.
+func TestBuildPlatformLogFilterValuesKQL_ClampsMaxValues(t *testing.T) {
+	zero := BuildPlatformLogFilterValuesKQL(PlatformLogFilterValuesParams{
+		Query: basePlatformParams(), Filter: FilterNamespace, MaxValues: 0,
+	})
+	if !strings.Contains(zero, "| take 100") {
+		t.Errorf("maxValues 0 should fall back to the default, not take 0\n%s", zero)
+	}
+
+	huge := BuildPlatformLogFilterValuesKQL(PlatformLogFilterValuesParams{
+		Query: basePlatformParams(), Filter: FilterNamespace, MaxValues: 999999,
+	})
+	if !strings.Contains(huge, "| take 1000") {
+		t.Errorf("maxValues should be capped\n%s", huge)
+	}
+}
+
+// FATAL and SEVERE are outside the contract's filter enum, so they fold into
+// ERROR - otherwise logLevels=["ERROR"] would miss them and the same message
+// would classify differently depending on whether it arrived structured.
+func TestFatalAndSevereFoldIntoError(t *testing.T) {
+	for _, msg := range []string{"a FATAL condition", "SEVERE fault"} {
+		if got := extractLogLevel(msg); got != "ERROR" {
+			t.Errorf("extractLogLevel(%q) = %q, want ERROR", msg, got)
+		}
+		if got := evalKeywordLadder(levelExpr(), msg); got != "ERROR" {
+			t.Errorf("KQL ladder for %q = %q, want ERROR", msg, got)
+		}
+	}
+	if got := normalizeLevel("fatal"); got != "ERROR" {
+		t.Errorf("envelope path disagrees: normalizeLevel(fatal) = %q", got)
 	}
 }

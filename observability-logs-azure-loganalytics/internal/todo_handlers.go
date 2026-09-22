@@ -25,19 +25,19 @@ func (h *LogsHandler) QueryEvents(
 	_ context.Context, _ gen.QueryEventsRequestObject,
 ) (gen.QueryEventsResponseObject, error) {
 	return gen.QueryEvents501JSONResponse(
-		makeError(gen.NotImplemented, "", "events are not supported by this adapter")), nil
+		makeError(gen.NotImplemented, errCodeNotImplemented, "events are not supported by this adapter")), nil
 }
 
 func (h *LogsHandler) QueryAuditLogs(
 	_ context.Context, _ gen.QueryAuditLogsRequestObject,
 ) (gen.QueryAuditLogsResponseObject, error) {
 	return gen.QueryAuditLogs501JSONResponse(
-		makeError(gen.NotImplemented, "", "audit logs are not supported by this adapter")), nil
+		makeError(gen.NotImplemented, errCodeNotImplemented, "audit logs are not supported by this adapter")), nil
 }
 
 func (h *LogsHandler) QueryAuditLogFilterValues(
 	_ context.Context, _ gen.QueryAuditLogFilterValuesRequestObject,
 ) (gen.QueryAuditLogFilterValuesResponseObject, error) {
 	return gen.QueryAuditLogFilterValues501JSONResponse(
-		makeError(gen.NotImplemented, "", "audit log filter values are not supported by this adapter")), nil
+		makeError(gen.NotImplemented, errCodeNotImplemented, "audit log filter values are not supported by this adapter")), nil
 }

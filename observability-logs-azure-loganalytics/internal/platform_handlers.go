@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	defaultPlatformLimit     = 100
-	maxPlatformLimit         = 1000
-	defaultPlatformMaxValues = 100
-	maxPlatformMaxValues     = 1000
+	defaultPlatformLimit = 100
+	maxPlatformLimit     = 1000
+
+	// maxValueSearchLength mirrors the contract's maxLength on valueSearch.
+	maxValueSearchLength = 256
 )
 
 // QueryPlatformLogs implements POST /api/v1alpha1/platform-logs/query.
@@ -80,20 +81,26 @@ func (h *LogsHandler) QueryPlatformLogFilterValues(
 	query.Limit = 0
 	query.SortOrder = ""
 
-	maxValues := defaultPlatformMaxValues
+	maxValues := loganalytics.DefaultMaxFilterValues
 	if request.Body.MaxValues != nil {
 		maxValues = *request.Body.MaxValues
 	}
 	if maxValues < 1 {
 		maxValues = 1
 	}
-	if maxValues > maxPlatformMaxValues {
-		maxValues = maxPlatformMaxValues
+	if maxValues > loganalytics.MaxMaxFilterValues {
+		maxValues = loganalytics.MaxMaxFilterValues
 	}
 
 	valueSearch := ""
 	if request.Body.ValueSearch != nil {
 		valueSearch = *request.Body.ValueSearch
+	}
+	// The observer caps this too, but an adapter runs without in-process auth,
+	// so it does not assume the observer is the only caller.
+	if len(valueSearch) > maxValueSearchLength {
+		return platformValuesBadRequest(
+			fmt.Sprintf("valueSearch cannot exceed %d characters", maxValueSearchLength)), nil
 	}
 
 	result, err := h.client.GetPlatformLogFilterValues(ctx, loganalytics.PlatformLogFilterValuesParams{

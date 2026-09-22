@@ -17,11 +17,20 @@ const ClusterInstanceExpr = `tolower(extract(@"/([^/]+)$", 1, tostring(_Resource
 // so counting past 1001 would buy nothing and scan the whole window.
 const MaxPlatformTotal = 1000
 
+// Bounds on how many distinct filter values one request may ask for, from the
+// adapter contract's PlatformLogFilterValuesRequest.maxValues.
+const (
+	DefaultMaxFilterValues = 100
+	MaxMaxFilterValues     = 1000
+)
+
 // filterColumnExpr maps a listable filter onto the expression holding its value.
 func filterColumnExpr(f PlatformLogFilter) string {
 	switch f {
 	case FilterClusterInstance:
-		return ClusterInstanceExpr
+		// platformBase always extends this column, so read it rather than
+		// recomputing the expression and giving the two a way to drift.
+		return "ClusterInstance"
 	case FilterNamespace:
 		return "PodNamespace"
 	case FilterPodName:
@@ -52,6 +61,12 @@ func BuildPlatformLogsKQL(p PlatformLogsParams) string {
 	if p.Limit > 0 {
 		sb.WriteString(fmt.Sprintf("\n| take %d", p.Limit))
 	}
+	// Level is projected either way; platformBase only computes it when it also
+	// has to filter on it, so compute it here over the page when it did not.
+	if len(p.LogLevels) == 0 {
+		sb.WriteString("\n")
+		sb.WriteString(levelExpr())
+	}
 	sb.WriteString(`
 | project
     TimeGenerated,
@@ -62,7 +77,12 @@ func BuildPlatformLogsKQL(p PlatformLogsParams) string {
     PodName,
     ContainerName,
     NodeName = Computer,
-    ContainerImage = tostring(KubernetesMetadata.image),
+    ContainerImage = strcat(
+        iff(isempty(tostring(KubernetesMetadata.imageRepo)), "",
+            strcat(tostring(KubernetesMetadata.imageRepo), "/")),
+        tostring(KubernetesMetadata.image),
+        iff(isempty(tostring(KubernetesMetadata.imageTag)), "",
+            strcat(":", tostring(KubernetesMetadata.imageTag)))),
     Labels = tostring(KubernetesMetadata.podLabels);
 `)
 
@@ -93,13 +113,23 @@ func BuildPlatformLogFilterValuesKQL(p PlatformLogFilterValuesParams) string {
 		values += "\n| where _value contains " + kqlString(p.ValueSearch)
 	}
 
+	// The handler clamps this, but the builder is exported: take 0 returns
+	// nothing, which reads as "this filter has no values" rather than as a bug.
+	maxValues := p.MaxValues
+	if maxValues < 1 {
+		maxValues = DefaultMaxFilterValues
+	}
+	if maxValues > MaxMaxFilterValues {
+		maxValues = MaxMaxFilterValues
+	}
+
 	sb.WriteString(values)
 	sb.WriteString(fmt.Sprintf(`
 | summarize _count = count() by _value
 | sort by _count desc, _value asc
 | take %d
 | project Value = _value, Count = _count;
-`, p.MaxValues))
+`, maxValues))
 
 	sb.WriteString(values)
 	sb.WriteString("\n| summarize TotalValues = dcount(_value)")
@@ -151,10 +181,14 @@ func platformBase(p PlatformLogsParams, skip PlatformLogFilter) string {
 		sb.WriteString(")")
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(levelExpr())
-
+	// The level ladder is seven `contains` scans plus five type checks, and it
+	// is only needed here when a level filter has to run before the take. When
+	// no level was requested, BuildPlatformLogsKQL appends it after the take so
+	// it evaluates over a page rather than the whole window, and a filter-values
+	// query skips it entirely.
 	if len(p.LogLevels) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(levelExpr())
 		sb.WriteString("\n| where Level in (")
 		writeKQLList(&sb, p.LogLevels)
 		sb.WriteString(")")
@@ -192,9 +226,16 @@ func levelExpr() string {
 	// Step 1: a structured message's own level field. gettype guards the
 	// string check so a numeric `level` falls through to the next key, as
 	// resolveLogLevel's json.Unmarshal into a string does.
+	//
+	// The lookup goes through parse_json(_msg) rather than LogMessage directly.
+	// LogMessage is dynamic and AMA may store a structured message either as a
+	// parsed object or as a string holding JSON text; parse_json is a no-op on
+	// the first and parses the second, which is exactly what resolveLogLevel's
+	// json.Unmarshal over tostring(LogMessage) does.
+	sb.WriteString("| extend _envelope = parse_json(_msg)\n")
 	sb.WriteString("| extend _lvlRaw = case(")
 	for _, key := range levelEnvelopeKeys {
-		ref := "LogMessage." + key
+		ref := "_envelope." + key
 		sb.WriteString(fmt.Sprintf(
 			`gettype(%s) == "string" and isnotempty(tostring(%s)), tostring(%s), `,
 			ref, ref, ref))

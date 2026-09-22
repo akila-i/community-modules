@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	errCodePrefix     = "OBS-V1-L-AZURE"
-	errCodeBadRequest = errCodePrefix + "-400"
-	errCodeNotFound   = errCodePrefix + "-404"
-	errCodeInternal   = errCodePrefix + "-500"
+	errCodePrefix         = "OBS-V1-L-AZURE"
+	errCodeBadRequest     = errCodePrefix + "-400"
+	errCodeNotFound       = errCodePrefix + "-404"
+	errCodeInternal       = errCodePrefix + "-500"
+	errCodeNotImplemented = errCodePrefix + "-501"
 )
 
 // LogsHandler implements the generated StrictServerInterface backed by
@@ -491,4 +492,3 @@ func capTotal(n int) int {
 	}
 	return n
 }
-

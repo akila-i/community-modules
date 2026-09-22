@@ -64,13 +64,12 @@ const (
 )
 
 // IsListableFilter reports whether a filter can have its values listed.
+//
+// Derived from filterColumnExpr rather than repeating its cases: a filter that
+// is listable but has no column would render `| extend _value = ` and fail in
+// Azure as invalid KQL, instead of being refused here with a 400.
 func IsListableFilter(f PlatformLogFilter) bool {
-	switch f {
-	case FilterClusterInstance, FilterNamespace, FilterPodName, FilterContainerName:
-		return true
-	default:
-		return false
-	}
+	return filterColumnExpr(f) != ""
 }
 
 // PlatformLogFilterValuesParams asks for the distinct values one filter takes

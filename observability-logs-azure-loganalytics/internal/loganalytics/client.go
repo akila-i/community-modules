@@ -49,6 +49,11 @@ func NewClientWithQueryAPI(api QueryAPI, cfg Config, logger *slog.Logger) *Clien
 	if cfg.QueryTimeout == 0 {
 		cfg.QueryTimeout = 30 * time.Second
 	}
+	if logger == nil {
+		// The query paths log on degraded results, and an exported constructor
+		// makes a nil logger easy to pass by accident.
+		logger = slog.New(slog.DiscardHandler)
+	}
 	return &Client{
 		api:          api,
 		workspaceID:  cfg.WorkspaceID,

@@ -100,15 +100,22 @@ var levelEnvelopeKeys = []string{"level", "logLevel", "severity", "severityText"
 
 // levelKeywords is the ordered keyword scan applied to unstructured messages.
 // First match wins, so "INFO: retrying after ERROR" is an ERROR. Shared with
-// the KQL builder. Note FATAL and SEVERE are reported as-is here rather than
-// folded into ERROR, unlike normalizeLevel - keyword scanning and envelope
-// normalisation have always differed, and the KQL mirrors both faithfully.
+// the KQL builder.
+//
+// FATAL and SEVERE fold into ERROR, matching what levelAliases already does on
+// the envelope path. Reporting them literally would put a level outside the
+// contract's DEBUG|INFO|WARN|ERROR filter enum, so logLevels=["ERROR"] would
+// silently miss a message whose text says FATAL - and the same message would
+// classify differently depending on whether it arrived structured.
+//
+// No entry for WARNING: "WARN" precedes it and is a prefix of it, so a WARNING
+// message is already matched, and a WARNING entry would only emit a dead
+// branch into the generated KQL.
 var levelKeywords = []struct{ Keyword, Level string }{
 	{"ERROR", "ERROR"},
-	{"FATAL", "FATAL"},
-	{"SEVERE", "SEVERE"},
+	{"FATAL", "ERROR"},
+	{"SEVERE", "ERROR"},
 	{"WARN", "WARN"},
-	{"WARNING", "WARN"},
 	{"INFO", "INFO"},
 	{"DEBUG", "DEBUG"},
 }
