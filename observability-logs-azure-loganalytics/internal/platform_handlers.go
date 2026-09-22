@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"unicode/utf8"
 
 	"github.com/openchoreo/community-modules/observability-logs-azure-loganalytics/internal/api/gen"
 	"github.com/openchoreo/community-modules/observability-logs-azure-loganalytics/internal/loganalytics"
@@ -85,20 +86,16 @@ func (h *LogsHandler) QueryPlatformLogFilterValues(
 	if request.Body.MaxValues != nil {
 		maxValues = *request.Body.MaxValues
 	}
-	if maxValues < 1 {
-		maxValues = 1
-	}
-	if maxValues > loganalytics.MaxMaxFilterValues {
-		maxValues = loganalytics.MaxMaxFilterValues
-	}
 
 	valueSearch := ""
 	if request.Body.ValueSearch != nil {
 		valueSearch = *request.Body.ValueSearch
 	}
 	// The observer caps this too, but an adapter runs without in-process auth,
-	// so it does not assume the observer is the only caller.
-	if len(valueSearch) > maxValueSearchLength {
+	// so it does not assume the observer is the only caller. Counted in runes:
+	// the contract's maxLength is characters, and counting bytes would reject a
+	// 100-character CJK phrase.
+	if utf8.RuneCountInString(valueSearch) > maxValueSearchLength {
 		return platformValuesBadRequest(
 			fmt.Sprintf("valueSearch cannot exceed %d characters", maxValueSearchLength)), nil
 	}

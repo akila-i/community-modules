@@ -4,6 +4,7 @@
 package loganalytics
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
@@ -392,5 +393,115 @@ func TestFatalAndSevereFoldIntoError(t *testing.T) {
 	}
 	if got := normalizeLevel("fatal"); got != "ERROR" {
 		t.Errorf("envelope path disagrees: normalizeLevel(fatal) = %q", got)
+	}
+}
+
+var envelopeKeyRe = regexp.MustCompile(`gettype\(_envelope\.([A-Za-z_]+)\) == "string"`)
+
+// evalLevelExpr interprets the whole generated ladder the way Kusto would:
+// the envelope lookup, then alias normalisation, then the keyword scan.
+//
+// The ladder-specific tests each check one stage in isolation, which is why
+// they could not see a divergence that lived in how the stages were reached.
+func evalLevelExpr(kql, msg string) string {
+	// Stage 1: the envelope, read through parse_json as the KQL does - no
+	// leading-brace guard.
+	raw := ""
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(msg), &envelope); err == nil {
+		for _, m := range envelopeKeyRe.FindAllStringSubmatch(kql, -1) {
+			v, ok := envelope[m[1]]
+			if !ok {
+				continue
+			}
+			var str string
+			// gettype(...) == "string" in KQL, a string unmarshal here.
+			if err := json.Unmarshal(v, &str); err != nil || str == "" {
+				continue
+			}
+			raw = str
+			break
+		}
+	}
+
+	// Stage 2: alias normalisation of an envelope-supplied level.
+	if raw != "" {
+		up := strings.ToUpper(strings.TrimSpace(raw))
+		aliases := map[string]string{}
+		for _, m := range aliasEqRe.FindAllStringSubmatch(kql, -1) {
+			aliases[m[1]] = m[2]
+		}
+		for _, m := range aliasInRe.FindAllStringSubmatch(kql, -1) {
+			for _, from := range strings.Split(m[1], ",") {
+				aliases[strings.Trim(strings.TrimSpace(from), `"`)] = m[2]
+			}
+		}
+		if to, ok := aliases[up]; ok {
+			return to
+		}
+		return up
+	}
+
+	// Stage 3: the keyword scan.
+	return evalKeywordLadder(kql, msg)
+}
+
+// TestLevelExprMatchesClassifierEndToEnd is the coherence guarantee that
+// matters: the level a query filters on and the level the response reports are
+// produced by one expression, so they must agree for any message.
+func TestLevelExprMatchesClassifierEndToEnd(t *testing.T) {
+	kql := levelExpr()
+
+	messages := []string{
+		// Envelope path.
+		`{"level":"error","msg":"boom"}`,
+		`{"level":"fatal"}`,
+		`{"level":"notice"}`,
+		`{"severity":"warning"}`,
+		`{"severityText":"TRACE"}`,
+		`{"severity_text":"informational"}`,
+		// Leading whitespace - the divergence the isolated tests could not see.
+		`  {"level":"notice"}`,
+		"\n\t{\"level\":\"debug\"}",
+		// A non-string level falls through to the next key, then the keywords.
+		`{"level":42,"logLevel":"warn"}`,
+		`{"level":42}`,
+		// An empty level is not a level.
+		`{"level":"","msg":"nothing here"}`,
+		// Not an object.
+		`["level","error"]`,
+		`"just a string"`,
+		`{not valid json`,
+		// Keyword path.
+		"an ERROR occurred",
+		"INFO: retrying after ERROR",
+		"a FATAL condition",
+		"SEVERE fault",
+		"warning: disk almost full",
+		"nothing of note here",
+		"",
+	}
+
+	for _, msg := range messages {
+		want := resolveLogLevel("", msg)
+		if got := evalLevelExpr(kql, msg); got != want {
+			t.Errorf("message %q: KQL resolves %q, resolveLogLevel resolves %q", msg, got, want)
+		}
+	}
+}
+
+// The image parts are only added when the name does not already carry them, so
+// a future agent putting the full reference in `image` cannot produce a
+// doubled string.
+func TestBuildPlatformLogsKQL_ContainerImageIsIdempotent(t *testing.T) {
+	got := BuildPlatformLogsKQL(basePlatformParams())
+
+	for _, want := range []string{
+		`_imgName startswith strcat(_imgRepo, "/")`,
+		`_imgName contains ":"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("container image assembly is missing the guard %q\n%s", want, got)
+		}
 	}
 }

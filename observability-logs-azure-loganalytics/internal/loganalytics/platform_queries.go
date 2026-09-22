@@ -68,6 +68,15 @@ func BuildPlatformLogsKQL(p PlatformLogsParams) string {
 		sb.WriteString(levelExpr())
 	}
 	sb.WriteString(`
+| extend _imgName = tostring(KubernetesMetadata.image),
+         _imgRepo = tostring(KubernetesMetadata.imageRepo),
+         _imgTag  = tostring(KubernetesMetadata.imageTag)
+| extend ContainerImage = strcat(
+    iff(isempty(_imgRepo) or _imgName startswith strcat(_imgRepo, "/"),
+        "", strcat(_imgRepo, "/")),
+    _imgName,
+    iff(isempty(_imgTag) or _imgName contains ":",
+        "", strcat(":", _imgTag)))
 | project
     TimeGenerated,
     LogMessage = tostring(LogMessage),
@@ -77,12 +86,7 @@ func BuildPlatformLogsKQL(p PlatformLogsParams) string {
     PodName,
     ContainerName,
     NodeName = Computer,
-    ContainerImage = strcat(
-        iff(isempty(tostring(KubernetesMetadata.imageRepo)), "",
-            strcat(tostring(KubernetesMetadata.imageRepo), "/")),
-        tostring(KubernetesMetadata.image),
-        iff(isempty(tostring(KubernetesMetadata.imageTag)), "",
-            strcat(":", tostring(KubernetesMetadata.imageTag)))),
+    ContainerImage,
     Labels = tostring(KubernetesMetadata.podLabels);
 `)
 
