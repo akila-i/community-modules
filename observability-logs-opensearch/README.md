@@ -99,6 +99,14 @@ the second cluster exists. The collector stamps it on each record as
 server sit a layer below OpenChoreo; static pods cannot be labelled, and managed
 providers reconcile that namespace anyway.
 
+Fluent Bit waits in `Init` until the `container-logs` and `audit-logs` index templates
+exist in OpenSearch. `openSearchSetup` creates them as a post-install hook, so without
+this wait the first daily index could be created with dynamic mappings the adapter's
+queries don't match. Fluent Bit can therefore be enabled in the same install as
+OpenSearch. If the templates are managed outside this chart, set
+`fluent-bit.waitForIndexTemplate.enabled=false`. See
+[Fluent Bit pods stay in Init](#fluent-bit-pods-stay-in-init).
+
 ### Single-cluster topology
 
 In a **single-cluster topology**, where the observability plane runs in the same cluster
@@ -178,7 +186,7 @@ helm upgrade --install observability-logs-opensearch \
 > - The `opensearch-admin-credentials` secret must exist on the remote cluster. If you don't have a shared secret backend, create it manually (see the [Multi-Cluster Connectivity](https://openchoreo.dev/docs/platform-engineer-guide/multi-cluster-connectivity/) guide).
 > - `fluent-bit.openSearchHost` and `fluent-bit.openSearchVHost` should match the TLS passthrough hostname on the obs gateway.
 > - `fluent-bit.openSearchPort` should match the passthrough listener port (commonly `11443` if the obs gateway uses non-standard ports).
-> - The adapter and setup job are disabled because they only need to run on the observability plane cluster.
+> - The adapter and setup job are disabled because they only need to run on the observability plane cluster. Fluent Bit stays in `Init` until the observability plane's setup job has created the index templates.
 > - On the **control plane** cluster, add `--set auditLogs.enabled=true` to also collect the audit trail. See [Enable audit log collection](#enable-audit-log-collection).
 
 ## Enable audit log collection
@@ -385,9 +393,19 @@ configuration changes.
 
 ## Troubleshooting
 
+### Fluent Bit pods stay in Init
+
+The `wait-for-index-template` init container polls `https://<openSearchVHost>:<openSearchPort>/_index_template/<name>` (connecting to `openSearchHost`) until each template in `fluent-bit.waitForIndexTemplate.templateNames` exists. Check its logs:
+
+```bash
+kubectl logs -n openchoreo-observability-plane <fluent-bit-pod> -c wait-for-index-template
+```
+
+If it keeps printing `Waiting for OpenSearch index template ...`, check that the `opensearch-setup-logs` job on the observability plane completed, that `fluent-bit.openSearchHost`/`Port`/`VHost` are reachable from the node, and that `fluent-bit.waitForIndexTemplate.credentialsSecretName` (default `opensearch-admin-credentials`) holds valid credentials. If the templates are intentionally managed elsewhere, set `fluent-bit.waitForIndexTemplate.enabled=false`.
+
 ### Observer returns no logs
 
-If Fluent Bit is shipping and `container-logs-*` is filling but Observer queries come back empty, the index was likely created before `openSearchSetup` applied its template — so it has dynamic mappings that don't match what the adapter queries. Delete the index and let Fluent Bit recreate it:
+If Fluent Bit is shipping and `container-logs-*` is filling but Observer queries come back empty, the index was likely created before `openSearchSetup` applied its template — so it has dynamic mappings that don't match what the adapter queries. Fluent Bit waits for the template, but an index created before that (or with `fluent-bit.waitForIndexTemplate.enabled=false`) keeps its mappings. Delete the index and let Fluent Bit recreate it:
 
 ```bash
 kubectl exec -n openchoreo-observability-plane opensearch-master-0 \
