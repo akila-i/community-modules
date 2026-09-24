@@ -15,7 +15,7 @@ global:
   imagePullSecrets: []
 
 fluent-bit:
-  enabled: false
+  enabled: true
 
   existingConfigMap: "fluent-bit"
 
