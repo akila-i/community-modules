@@ -117,11 +117,9 @@ providers reconcile that namespace anyway.
 ### Waiting for the index templates
 
 Fluent Bit waits in `Init` until the `container-logs` and `audit-logs` index templates
-exist in OpenSearch. `openSearchSetup` creates them as a post-install hook, so without
-this wait the first daily index could be created with dynamic mappings the adapter's
-queries don't match. Fluent Bit can therefore be enabled in the same install as
-OpenSearch. If the templates are managed outside this chart, set
-`fluent-bit.waitForIndexTemplate.enabled=false`. See
+exist in OpenSearch. The `openSearchSetup` job creates them, so without this wait the
+first daily index could be created with dynamic mappings the adapter's queries don't
+match. Fluent Bit can therefore be enabled in the same install as OpenSearch. See
 [Fluent Bit pods stay in Init](#fluent-bit-pods-stay-in-init).
 
 ## Multi-cluster topology
@@ -401,7 +399,14 @@ The `wait-for-index-template` init container polls `https://<openSearchVHost>:<o
 kubectl logs -n openchoreo-observability-plane <fluent-bit-pod> -c wait-for-index-template
 ```
 
-If it keeps printing `Waiting for OpenSearch index template ...`, check that the `opensearch-setup-logs` job on the observability plane completed, that `fluent-bit.openSearchHost`/`Port`/`VHost` are reachable from the node, and that `fluent-bit.waitForIndexTemplate.credentialsSecretName` (default `opensearch-admin-credentials`) holds valid credentials. If the templates are intentionally managed elsewhere, set `fluent-bit.waitForIndexTemplate.enabled=false`.
+If it keeps printing `Waiting for OpenSearch index template ...`, check, in order:
+
+- the `opensearch-setup-logs-<revision>` job on the observability plane completed;
+- `fluent-bit.openSearchHost`/`Port`/`VHost` are reachable from the node;
+- `fluent-bit.waitForIndexTemplate.credentialsSecretName` (default `opensearch-admin-credentials`) holds valid credentials;
+- the host actually carries every name in `fluent-bit.waitForIndexTemplate.templateNames`. An OpenSearch provisioned outside this chart may have no `audit-logs` template, in which case drop that name from the list.
+
+If the templates are managed elsewhere and their ordering is guaranteed by something else, set `fluent-bit.waitForIndexTemplate.enabled=false` — but see [Waiting for the index templates](#waiting-for-the-index-templates) for what that gives up.
 
 ### Observer returns no logs
 
