@@ -76,7 +76,7 @@ helm upgrade --install observability-events-otel-collector \
   --namespace openchoreo-observability-plane --version 0.2.0 \
   -f - <<'EOF'
 collector:
-  extraEnv:
+  extraEnv: &opensearchEnv
     - name: OPENSEARCH_USERNAME
       valueFrom:
         secretKeyRef:
@@ -87,6 +87,23 @@ collector:
         secretKeyRef:
           name: opensearch-admin-credentials
           key: password
+  # Holds the collector until the k8s-events index template exists. See
+  # "Waiting for the index template" below.
+  initContainers:
+    - name: wait-for-index-template
+      image: curlimages/curl:8.22.0
+      env: *opensearchEnv
+      command:
+        - sh
+        - -c
+        - |
+          until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+                -u "$OPENSEARCH_USERNAME:$OPENSEARCH_PASSWORD" \
+                https://opensearch:9200/_index_template/k8s-events)" = "200" ]; do
+            echo "Waiting for OpenSearch index template k8s-events..."
+            sleep 5
+          done
+          echo "Index template k8s-events found"
 extraExtensions:
   basicauth/opensearch:
     client_auth:
@@ -106,6 +123,60 @@ pipelineExporters:
   - opensearch
 EOF
 ```
+
+#### Waiting for the index template
+
+`observability-logs-opensearch` owns the `k8s-events` index template and creates it from its
+`openSearchSetup` job — so that module must be installed against the same OpenSearch, and the
+template must exist before this collector writes its first event.
+
+If the collector writes first, OpenSearch creates that day's `k8s-events-<date>` index with
+dynamic mappings instead of the template's. The template sets `"dynamic": "false"`, which makes
+OpenSearch ignore labels it does not map; without it, a Kubernetes object carrying both `app` and
+`app.kubernetes.io/name` produces two incompatible shapes for the same field, and the exporter
+fails permanently with `mapper_parsing_exception` (see
+[Troubleshooting](#events-are-rejected-with-mapper_parsing_exception)).
+
+The `wait-for-index-template` init container above closes that window: the pod stays in `Init`,
+polling every 5 seconds, until the template exists. Watch it with:
+
+```bash
+kubectl -n openchoreo-observability-plane logs deploy/events-collector -c wait-for-index-template
+```
+
+The credentials come from the `&opensearchEnv` YAML anchor, so the init container reuses the same
+Secret as the exporter's basicauth extension.
+
+**Through a gateway (multi-cluster).** When the collector reaches OpenSearch through the
+observability plane's TLS-passthrough listener, the exporter sets `tls.server_name_override` and a
+`Host` header. The wait has to present the same SNI, so use `--connect-to` and put the SNI name in
+the URL:
+
+```yaml
+collector:
+  initContainers:
+    - name: wait-for-index-template
+      image: curlimages/curl:8.22.0
+      env: *opensearchEnv
+      command:
+        - sh
+        - -c
+        - |
+          SNI=opensearch.observability.openchoreo.localhost
+          HOST=host.k3d.internal
+          PORT=11085
+          until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+                -u "$OPENSEARCH_USERNAME:$OPENSEARCH_PASSWORD" \
+                --connect-to "$SNI:$PORT:$HOST:$PORT" \
+                "https://$SNI:$PORT/_index_template/k8s-events")" = "200" ]; do
+            echo "Waiting for OpenSearch index template k8s-events..."
+            sleep 5
+          done
+          echo "Index template k8s-events found"
+```
+
+`collector.initContainers` is generic and rendered through `tpl`, so the same hook works for any
+backend that needs the collector held back until it is ready.
 
 ### OpenObserve (native OTLP/HTTP)
 
@@ -313,6 +384,57 @@ helm upgrade --install observability-events-otel-collector \
   --set persistence.enabled=true \
   --set persistence.storageClassName=<your-storage-class>
 ```
+
+## Troubleshooting
+
+### Events are rejected with `mapper_parsing_exception` for OpenSearch backends
+
+The collector logs a permanent export failure and drops the whole batch:
+
+```
+error   internal/base_exporter.go:118   Exporting failed. Rejecting data.
+  {"error": "not retryable error: Permanent error: {\"type\":\"mapper_parsing_exception\",
+  \"reason\":\"object mapping for [resource.k8s.object.label.app] tried to parse field
+  [k8s.object.label.app] as object, but found a concrete value\"}", "rejected_items": 4}
+```
+
+The enrichment processor copies each label of the involved object to
+`k8s.object.label.<key>`, and OpenSearch reads dots in field names as object paths. So
+`app.kubernetes.io/name` makes `…label.app` an object while a plain `app` label makes it a string.
+A field cannot be both, and whichever shape lands first fixes that index's mapping.
+
+This only happens on an index created **without** the `k8s-events` template, which sets
+`"dynamic": "false"` and so never maps those labels at all. It is intermittent by nature: it
+depends on which shape reached a fresh daily index first.
+
+To fix it:
+
+1. Add the [`wait-for-index-template` init container](#waiting-for-the-index-template) so the
+   collector cannot write before the template exists, and confirm `observability-logs-opensearch`
+   is installed against the same OpenSearch.
+2. Delete the affected index — applying a template never repairs an index that already exists:
+
+   ```bash
+   kubectl exec -n openchoreo-observability-plane opensearch-master-0 \
+     -- curl -ksu admin:<password> -X DELETE 'https://localhost:9200/k8s-events-<date>'
+   ```
+
+   Events already dropped are gone; only new ones are indexed. Left alone, the error also clears by
+   itself when the next day's index is created under the template.
+
+### The collector stays in `Init` when used with OpenSearch backends
+
+With the wait in place, the pod holds at `Init:0/1` until the template exists. Check what it is
+waiting for:
+
+```bash
+kubectl -n openchoreo-observability-plane logs deploy/events-collector -c wait-for-index-template
+```
+
+Repeated `Waiting for OpenSearch index template k8s-events...` means the template is still missing
+or unreachable: check that `observability-logs-opensearch`'s `opensearch-setup-logs-<revision>` job
+completed, that the endpoint (and SNI, for a gateway) matches the exporter's, and that the
+credentials in `collector.extraEnv` are valid.
 
 ## Caveats
 
