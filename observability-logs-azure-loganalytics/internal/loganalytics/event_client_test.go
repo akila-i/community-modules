@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azlogs"
 )
@@ -273,6 +274,37 @@ func TestGetEvents_OtherBadRequestsFail(t *testing.T) {
 
 	if _, err := testClient(api).GetEvents(context.Background(), sweepParams(100)); err == nil {
 		t.Fatal("expected an error for a missing column")
+	}
+}
+
+// isMissingTable reads the service's error body, not the formatted error
+// text, and walks its nested errors to whatever depth they arrive at.
+func TestIsMissingTable(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"live missing-table body", badRequestError(missingOTelLogsBody), true},
+		{"shallower nesting", badRequestError(`{"error":{"code":"SEM0100",` +
+			`"message":"'where' operator: Failed to resolve table or column expression named 'OTelLogs'"}}`), true},
+		{"deeper nesting", badRequestError(`{"error":{"code":"BadArgumentError","innererror":{"code":"SemanticError",` +
+			`"innererror":{"code":"Wrapper","innererror":{"code":"SEM0100",` +
+			`"message":"Failed to resolve table or column expression named 'OTelLogs'"}}}}}`), true},
+		{"another table", badRequestError(strings.ReplaceAll(missingOTelLogsBody, "OTelLogs", "Other_CL")), false},
+		{"table named under another code", badRequestError(strings.ReplaceAll(missingOTelLogsBody, "SEM0100", "SEM0001")), false},
+		// The formatted error still carries this text; only the decoded body counts.
+		{"not a JSON body", badRequestError("Failed to resolve table or column expression named 'OTelLogs'"), false},
+		{"no response", &azcore.ResponseError{StatusCode: http.StatusBadRequest}, false},
+		{"not a 400", &azcore.ResponseError{StatusCode: http.StatusInternalServerError}, false},
+		{"not a response error", errors.New("Failed to resolve table or column expression named 'OTelLogs'"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isMissingTable(tc.err, "OTelLogs"); got != tc.want {
+				t.Errorf("isMissingTable = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

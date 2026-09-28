@@ -5,6 +5,7 @@ package loganalytics
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azlogs"
 )
@@ -118,14 +120,49 @@ func (c *Client) ProbeEventsTable(ctx context.Context) error {
 	return queryError(resp)
 }
 
+// semFailedToResolve is the service's code for a name the query references
+// but the workspace cannot resolve - a table or a column alike, so the message
+// is what tells them apart.
+const semFailedToResolve = "SEM0100"
+
+// queryErrorDetail is one level of the error body Log Analytics returns for a
+// rejected query. Each level may nest a more specific one; the depth is not
+// part of the contract, so it is walked rather than addressed.
+type queryErrorDetail struct {
+	Code       string            `json:"code"`
+	Message    string            `json:"message"`
+	InnerError *queryErrorDetail `json:"innererror"`
+}
+
 // isMissingTable reports whether err is the service rejecting the query
 // because the configured events table does not exist. Only that table counts:
 // a missing column is a real error.
+//
+// It reads the service's error body rather than ResponseError.Error(), whose
+// layout is presentation, not contract. Anything it cannot decode is not a
+// missing table, so the query fails loudly instead of answering empty.
 func isMissingTable(err error, table string) bool {
 	var re *azcore.ResponseError
-	if !errors.As(err, &re) || re.StatusCode != http.StatusBadRequest {
+	if !errors.As(err, &re) || re.StatusCode != http.StatusBadRequest || re.RawResponse == nil {
 		return false
 	}
-	msg := re.Error()
-	return strings.Contains(msg, "Failed to resolve table") && strings.Contains(msg, "'"+table+"'")
+	// azcore caches the body when it builds the error, so it is still readable.
+	payload, err := runtime.Payload(re.RawResponse)
+	if err != nil {
+		return false
+	}
+	var body struct {
+		Error *queryErrorDetail `json:"error"`
+	}
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return false
+	}
+	for d := body.Error; d != nil; d = d.InnerError {
+		if d.Code == semFailedToResolve &&
+			strings.Contains(d.Message, "Failed to resolve table") &&
+			strings.Contains(d.Message, "'"+table+"'") {
+			return true
+		}
+	}
+	return false
 }
