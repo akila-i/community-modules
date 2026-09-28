@@ -478,8 +478,9 @@ Queries follow the adapter contract:
   scope nor reasons is rejected with `400`.
 - The window is `[startTime, endTime)`. A page is never cut between events
   sharing one timestamp: it is extended to include the whole group, so it can
-  exceed `limit`. `total` is counted past the page, so `total` greater than
-  the number of events returned means the read stopped short.
+  exceed `limit`. `total` is the exact number of matching events in the
+  window, so `total` greater than the number of events returned means the
+  read stopped short.
 - Each query is one round trip to Log Analytics, which allows only five
   concurrent queries per identity.
 

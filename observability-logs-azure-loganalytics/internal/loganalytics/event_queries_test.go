@@ -226,15 +226,15 @@ func TestBuildEventsKQL_DefaultsToDescAndDefaultLimit(t *testing.T) {
 	assertContains(t, kql, "top 100 by TimeGenerated desc", "| take 10100")
 }
 
-// total must exceed the largest page the rows statement can return, or a
-// truncated read would look complete.
-func TestBuildEventsKQL_CountsPastTheLargestPage(t *testing.T) {
+// total counts the whole window: nothing may truncate the set before it is
+// counted, or a truncated read could look complete.
+func TestBuildEventsKQL_CountsTheWholeWindow(t *testing.T) {
 	p := eventParams()
 	p.Limit = 1000
 	p.Reasons = []string{"BackOff"}
 	kql := buildEvents(t, p)
 
-	if !strings.HasSuffix(kql, "Base\n| take 11001\n| summarize Total = count()") {
+	if !strings.HasSuffix(kql, ";\nBase\n| summarize Total = count()") {
 		t.Errorf("unexpected count statement:\n%s", kql)
 	}
 	if n := strings.Count(kql, "summarize Total"); n != 1 {
@@ -253,7 +253,7 @@ func TestBuildEventsKQL_StatementOrderAndProjection(t *testing.T) {
 	}
 	if !strings.HasPrefix(statements[1], "let Boundary") ||
 		!strings.HasPrefix(statements[2], "Base\n| where TimeGenerated") ||
-		!strings.HasPrefix(statements[3], "Base\n| take") {
+		!strings.HasPrefix(statements[3], "Base\n| summarize Total") {
 		t.Errorf("statements out of order:\n%s", kql)
 	}
 	// Type is a standard Log Analytics column, so the event type is projected
