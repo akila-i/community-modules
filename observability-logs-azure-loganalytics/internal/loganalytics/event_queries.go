@@ -21,8 +21,9 @@ const kqlDatetimeLayout = "2006-01-02T15:04:05.0000000Z"
 //     the first limit, so this is the page plus the rest of the group sharing
 //     its final timestamp - the contract forbids splitting that group, since a
 //     caller resumes from the last timestamp it was given.
-//  3. Total, counted past the largest page statement 2 can return, so it is
-//     always greater than the page whenever the page is not the whole window.
+//  3. Total: every event in the window, counted exactly. Log Analytics puts no
+//     cap on counting, so there is no reason to stop short of the true figure;
+//     it exceeds the page whenever the page is not the whole window.
 //
 // Sorting happens before truncation in both 1 and 2, so the events left out
 // are always those furthest from the sort direction.
@@ -92,8 +93,7 @@ func BuildEventsKQL(p EventsParams, table, scopeName string) (string, error) {
 		eventLabel(LabelEnvironmentUID),
 	)
 
-	fmt.Fprintf(&sb, "Base\n| take %d\n| summarize Total = count()",
-		limit+MaxEventBoundaryGroup+1)
+	sb.WriteString("Base\n| summarize Total = count()")
 
 	return sb.String(), nil
 }

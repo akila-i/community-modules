@@ -62,8 +62,8 @@ type EventEntry struct {
 }
 
 // EventsResult is one page of events. Events may exceed the requested limit
-// when the page was extended to its timestamp boundary, and Total counts past
-// the page so a caller can tell a truncated read from a complete one.
+// when the page was extended to its timestamp boundary. Total counts every
+// event in the window, so a caller can tell a truncated read from a complete one.
 type EventsResult struct {
 	Events []EventEntry
 	Total  int
