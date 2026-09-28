@@ -98,6 +98,7 @@ collector:
         - -c
         - |
           until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+                --connect-timeout 5 --max-time 10 \
                 -u "$OPENSEARCH_USERNAME:$OPENSEARCH_PASSWORD" \
                 https://opensearch:9200/_index_template/k8s-events)" = "200" ]; do
             echo "Waiting for OpenSearch index template k8s-events..."
@@ -134,11 +135,12 @@ If the collector writes first, OpenSearch creates that day's `k8s-events-<date>`
 dynamic mappings instead of the template's. The template sets `"dynamic": "false"`, which makes
 OpenSearch ignore labels it does not map; without it, a Kubernetes object carrying both `app` and
 `app.kubernetes.io/name` produces two incompatible shapes for the same field, and the exporter
-fails permanently with `mapper_parsing_exception` (see
-[Troubleshooting](#events-are-rejected-with-mapper_parsing_exception)).
+fails permanently with `mapper_parsing_exception`.
 
 The `wait-for-index-template` init container above closes that window: the pod stays in `Init`,
-polling every 5 seconds, until the template exists. Watch it with:
+polling every 5 seconds, until the template exists. Each check is bounded by
+`--connect-timeout 5 --max-time 10`, so an endpoint that accepts the connection and then stops
+responding still retries instead of blocking forever. Watch it with:
 
 ```bash
 kubectl -n openchoreo-observability-plane logs deploy/events-collector -c wait-for-index-template
@@ -166,6 +168,7 @@ collector:
           HOST=host.k3d.internal
           PORT=11085
           until [ "$(curl -sk -o /dev/null -w '%{http_code}' \
+                --connect-timeout 5 --max-time 10 \
                 -u "$OPENSEARCH_USERNAME:$OPENSEARCH_PASSWORD" \
                 --connect-to "$SNI:$PORT:$HOST:$PORT" \
                 "https://$SNI:$PORT/_index_template/k8s-events")" = "200" ]; do
@@ -386,41 +389,6 @@ helm upgrade --install observability-events-otel-collector \
 ```
 
 ## Troubleshooting
-
-### Events are rejected with `mapper_parsing_exception` for OpenSearch backends
-
-The collector logs a permanent export failure and drops the whole batch:
-
-```
-error   internal/base_exporter.go:118   Exporting failed. Rejecting data.
-  {"error": "not retryable error: Permanent error: {\"type\":\"mapper_parsing_exception\",
-  \"reason\":\"object mapping for [resource.k8s.object.label.app] tried to parse field
-  [k8s.object.label.app] as object, but found a concrete value\"}", "rejected_items": 4}
-```
-
-The enrichment processor copies each label of the involved object to
-`k8s.object.label.<key>`, and OpenSearch reads dots in field names as object paths. So
-`app.kubernetes.io/name` makes `…label.app` an object while a plain `app` label makes it a string.
-A field cannot be both, and whichever shape lands first fixes that index's mapping.
-
-This only happens on an index created **without** the `k8s-events` template, which sets
-`"dynamic": "false"` and so never maps those labels at all. It is intermittent by nature: it
-depends on which shape reached a fresh daily index first.
-
-To fix it:
-
-1. Add the [`wait-for-index-template` init container](#waiting-for-the-index-template) so the
-   collector cannot write before the template exists, and confirm `observability-logs-opensearch`
-   is installed against the same OpenSearch.
-2. Delete the affected index — applying a template never repairs an index that already exists:
-
-   ```bash
-   kubectl exec -n openchoreo-observability-plane opensearch-master-0 \
-     -- curl -ksu admin:<password> -X DELETE 'https://localhost:9200/k8s-events-<date>'
-   ```
-
-   Events already dropped are gone; only new ones are indexed. Left alone, the error also clears by
-   itself when the next day's index is created under the template.
 
 ### The collector stays in `Init` when used with OpenSearch backends
 
