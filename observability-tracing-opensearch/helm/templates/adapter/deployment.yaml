@@ -48,6 +48,19 @@ spec:
             secretKeyRef:
               name: {{ .Values.adapter.openSearchSecretName | default "opensearch-admin-credentials" }}
               key: password
+        {{- if eq (include "observability-tracing-opensearch.rawQueryEnabled" .) "true" }}
+        # Raw trace queries run as a read-only user limited to the trace indices.
+        - name: OPENSEARCH_RAW_QUERY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "observability-tracing-opensearch.rawQuerySecretName" . }}
+              key: username
+        - name: OPENSEARCH_RAW_QUERY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "observability-tracing-opensearch.rawQuerySecretName" . }}
+              key: password
+        {{- end }}
         resources:
           limits:
             cpu: {{ .Values.adapter.resources.limits.cpu }}

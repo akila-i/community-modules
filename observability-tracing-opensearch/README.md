@@ -175,6 +175,65 @@ Module versions 0.8.1, 0.9.1 and later bundle OpenSearch 3.9.0. Earlier versions
 > - Upgrade with `--reset-then-reuse-values` (Helm 3.14 or later). `--reuse-values` keeps the previous chart's defaults, so OpenSearch stays on 3.3.0.
 > - With Helm 4 and the operator-based OpenSearch, add `--server-side=false`. The operator updates fields of the `OpenSearchCluster` resource after it is created, and Helm 4's server-side apply rejects any upgrade that sets them again.
 
+## Raw trace queries
+
+The adapter serves raw trace queries (`POST /api/v1alpha1/traces/raw-query` on the OpenChoreo Observer). The request
+body is an OpenSearch search body, sent as `application/json`, and the response is OpenSearch's own search response.
+Raw queries need OpenChoreo v1.4.0 or later; earlier Observers, including v1.4.0-m.2, don't have the route. For example:
+
+```json
+{
+  "size": 0,
+  "query": {
+    "bool": {
+      "filter": [
+        { "range": { "startTime": { "gte": "2026-10-20T08:00:00Z", "lte": "2026-10-20T09:00:00Z" } } },
+        { "term": { "status.code": "Error" } }
+      ]
+    }
+  },
+  "aggs": { "by_service": { "terms": { "field": "resource.service.name", "size": 20 } } }
+}
+```
+
+How a raw query runs:
+
+- **Read-only, trace data only:** the body runs through the search API only, against the trace indices
+  (`otel-traces-*`), as a read-only OpenSearch user whose role can only read those indices. Bodies that read other
+  indices (terms lookups, `more_like_this` documents, indexed shapes, percolate) are rejected, and so are `global`
+  aggregations. A body that isn't JSON gets 415.
+- **Request as sent:** the body runs as written, including its own time range and `size`. Without a time range, the
+  query reads every trace the indices hold. The adapter only sets the search `timeout`.
+- **Limits:** a query timeout (default `30s`, `adapter.rawQuery.timeout`) and a maximum response size (default 10 MiB,
+  `adapter.rawQuery.maxResponseBytes`). A query that runs past the timeout, including one OpenSearch stops with
+  partial results, gets 504; a larger result is rejected rather than returned partially.
+
+### Read-only user
+
+By default, the chart generates a Secret, `tracing-adapter-opensearch-raw-query`, with the user name
+`openchoreo-traces-reader` and a random password. The setup job then creates that user in OpenSearch through the
+security REST API, with a role, `openchoreo_traces_reader`, that can only read the trace indices. To use credentials
+of your own, create a Secret with `username` and `password` keys and set `adapter.rawQuery.credentialsSecretName`;
+the setup job creates that user in the same way. If the setup job is disabled, create the user and role yourself.
+
+To turn raw queries off, set `adapter.rawQuery.enabled` to `false`: the adapter then answers them with 501.
+
+### Making span attributes searchable
+
+The trace index template maps only the fields the adapter itself queries. Span attributes are stored, but a query
+can't match on them until they are mapped. Add mappings with `openSearchSetup.traceIndexMappings`:
+
+```yaml
+openSearchSetup:
+  traceIndexMappings:
+    attributes.db.system.name: {type: keyword}
+    attributes.http.route: {type: keyword}
+```
+
+The setup job adds them to the index template and to the existing trace indices. Spans stored before a field was
+mapped become searchable on it once reindexed, for example with
+`POST otel-traces-*/_update_by_query?conflicts=proceed`.
+
 ## Dependencies
 
 Bundled upstream Helm charts:

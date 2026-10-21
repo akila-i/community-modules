@@ -42,3 +42,21 @@ Parameters:
 {{- end -}}
 {{- printf "%s:%s" $repo (.image.tag | default .context.Chart.AppVersion) -}}
 {{- end }}
+
+{{/*
+Whether raw trace queries are enabled. adapter.rawQuery may be absent from
+values reused from an earlier release, which leaves them enabled.
+*/}}
+{{- define "observability-tracing-opensearch.rawQueryEnabled" -}}
+{{- $rawQuery := .Values.adapter.rawQuery | default dict -}}
+{{- if hasKey $rawQuery "enabled" -}}{{ $rawQuery.enabled }}{{- else -}}true{{- end -}}
+{{- end }}
+
+{{/*
+The Secret holding the read-only OpenSearch user raw trace queries run as:
+adapter.rawQuery.credentialsSecretName, or the one the chart generates.
+*/}}
+{{- define "observability-tracing-opensearch.rawQuerySecretName" -}}
+{{- $rawQuery := .Values.adapter.rawQuery | default dict -}}
+{{- $rawQuery.credentialsSecretName | default "tracing-adapter-opensearch-raw-query" -}}
+{{- end }}
