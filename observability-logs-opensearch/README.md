@@ -346,6 +346,18 @@ Needing a different retention is the reason audit is a separate stream rather th
 filter over the container logs, so the two are not expected to match. Changing the value
 and upgrading reconciles the policy onto the indices that already exist.
 
+## Upgrading to OpenSearch 3.9.0
+
+Module versions 0.5.5, 0.6.1 and 0.7.1, and the versions after 0.8.0, bundle OpenSearch 3.9.0. Earlier versions, including 0.6.0, 0.7.0 and 0.8.0, bundle 3.3.0. Before the first upgrade to a version with 3.9.0:
+
+- **Take a snapshot of OpenSearch.** Once OpenSearch 3.9.0 has opened the data, it cannot be rolled back to 3.3.0; `helm rollback` succeeds but OpenSearch fails to start. Restoring a [snapshot](https://docs.opensearch.org/latest/tuning-your-cluster/availability-and-recovery/snapshots/index/) is the only way back. For the same reason, never move from a version with 3.9.0 to one with 3.3.0: from 0.5.5, 0.6.1 or 0.7.1, upgrade to 0.6.1, 0.7.1 or a version after 0.8.0, not to 0.6.0, 0.7.0 or 0.8.0.
+- **Expect OpenSearch to restart.** With the subchart OpenSearch (`openSearch.enabled=true`), its single pod restarts, and logs written while it is down (about 20 seconds) are dropped. With the operator (`openSearchCluster.enabled=true`), the operator upgrades the nodes one at a time and then restarts the data nodes once more. OpenSearch 3.9.0 uses about twice the CPU of 3.3.0 while starting, so upgrade when the nodes have spare CPU.
+
+> **Note:**
+>
+> - Upgrade with `--reset-then-reuse-values` (Helm 3.14 or later), as in the commands above. `--reuse-values` keeps the previous chart's defaults, so OpenSearch stays on 3.3.0, and when upgrading from a version with Fluent Bit 4.x, Fluent Bit 5.x is probed on a readiness path it no longer serves. The chart refuses to render in that case.
+> - With Helm 4 and the operator-based OpenSearch, add `--server-side=false`. The operator updates fields of the `OpenSearchCluster` resource after it is created, and Helm 4's server-side apply rejects any upgrade that sets them again.
+
 ## Upgrading from 0.7.x
 
 0.8.0 maps the release line labels of Kubernetes events and the release line of audit records. Daily indices created after the upgrade get these fields from the index templates. Existing `k8s-events-*` and audit indices, including the indices for the day of the upgrade, keep the 0.7.x mapping, so records written to them can't be filtered by release line. Records written before the upgrade carry no release line, so no action is needed for them.
