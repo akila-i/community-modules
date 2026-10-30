@@ -173,6 +173,15 @@ kube-prometheus-stack:
 
   kubelet:
     enabled: true
+    serviceMonitor:
+      # In multiClusterExporter mode the chart's Prometheus (and the token
+      # Secret it creates) is disabled, so the PrometheusAgent scrapes the
+      # kubelet with its own service account token instead.
+      authorization:
+        type: Bearer
+        credentials:
+          name: '{{ if eq .Values.global.installationMode "multiClusterExporter" }}openchoreo-prometheus-agent-token{{ else }}{{ include "kube-prometheus-stack.prometheus.tokenSecretName" . }}{{ end }}'
+          key: token
 
   kubeApiServer:
     enabled: false
