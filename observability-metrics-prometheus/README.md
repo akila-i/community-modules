@@ -68,6 +68,38 @@ helm upgrade --install observability-metrics-prometheus \
 | `prometheusCustomizations.remoteWrite.tlsInsecureSkipVerify` | `false`    | Skip TLS certificate verification for self-signed certs on the receiver.              |
 | `prometheusCustomizations.agent.image`                       | `quay.io/prometheus/prometheus:v3.15.1-distroless` | Image for the PrometheusAgent. Empty falls back to the operator's compiled-in default. |
 
+## Upgrading
+
+### From 0.6.x or 0.7.x
+
+These versions bundle kube-prometheus-stack 81.6.3, while 0.8.x bundles 92.16.0, which moves the Prometheus Operator from v0.88.1 to v0.94.2. Helm does not upgrade CRDs, so apply the operator's CRDs before upgrading the chart. `--force-conflicts` is needed because Helm owns the CRDs it installed.
+
+```bash
+for crd in alertmanagerconfigs alertmanagers podmonitors probes prometheusagents prometheuses prometheusrules scrapeconfigs servicemonitors thanosrulers; do
+  kubectl apply --server-side --force-conflicts \
+    -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.2/example/prometheus-operator-crd/monitoring.coreos.com_${crd}.yaml
+done
+```
+
+Then upgrade the chart, keeping the values of your installation mode:
+
+```bash
+helm upgrade observability-metrics-prometheus \
+  oci://cr.openchoreo.dev/openchoreo/helm-charts/observability-metrics-prometheus \
+  --namespace openchoreo-observability-plane --reset-then-reuse-values \
+  --version 0.8.1
+```
+
+What to expect:
+
+- Prometheus, Alertmanager, the Prometheus Operator and kube-state-metrics restart once. In `multiClusterExporter` mode the PrometheusAgent pod is replaced, which can take a few minutes while the old pod shuts down.
+- From 0.6.x only: Prometheus and Alertmanager move to PersistentVolumeClaims, so the cluster needs a default StorageClass (see [Storage and retention](#storage-and-retention)). Metrics collected before the upgrade are not carried over, because 0.6.x kept them on an `emptyDir` volume.
+- The Prometheus image is now the `distroless` variant. If you mirror images to a private registry, mirror the `-distroless` tags.
+
+### From 0.8.0
+
+No extra steps. Upgrade the chart with the `helm upgrade` command above.
+
 ## Storage and retention
 
 In `singleCluster` and `multiClusterReceiver` modes, the Prometheus server stores its TimeSeries DataBase (TSDB) on a PersistentVolumeClaim by default, so metrics survive the pod being replaced by a restart, an eviction, a node drain or a chart upgrade. Alertmanager likewise persists its silences and notification log.
@@ -229,5 +261,6 @@ Bundled upstream Helm charts:
 
 | OpenChoreo Version | Module Version  |
 | ------------------ | --------------- |
-| v1.1.x and later   | 0.6.x and later |
+| v1.4.0 and later   | 0.9.x           |
+| v1.1.x - v1.3.x    | 0.6.x - 0.8.x   |
 | v1.0.x             | 0.3.x           |
